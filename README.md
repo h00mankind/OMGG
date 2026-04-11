@@ -1,36 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# OMGG Leaderboard
 
-## Getting Started
+Realtime win tracker. Anyone with the link picks a name and taps to log wins. The leaderboard updates live across all connected clients.
 
-First, run the development server:
+## Setup
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. `npm install`
+2. Create an InstantDB app at [instantdb.com](https://www.instantdb.com) and run `npx instant-cli@latest init` to authenticate and generate your app ID.
+3. Set the env var — create `.env.local`:
+   ```
+   NEXT_PUBLIC_INSTANT_APP_ID=your-app-id-here
+   ```
+4. Push the schema: `npx instant-cli@latest push`
+5. `npm run dev` → open [localhost:3000](http://localhost:3000)
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Configuration
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Edit `src/lib/config.ts`:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **`CURRENT_TITLE`** — the game/event being tracked (e.g. `"Victory Royale"`). Change this to start a fresh leaderboard; old entries stay in the DB under the previous title.
+- **`ROSTER`** — the list of players. Each entry has an `id` (stable slug) and `name` (display name). Add or remove players here.
 
-## Learn More
+## Permissions tradeoff
 
-To learn more about Next.js, take a look at the following resources:
+This is a public-link app with no authentication. Anyone with the URL can view the leaderboard and log wins. Entries cannot be edited or deleted through the client. This keeps the UX frictionless but means a determined user could spam entries via the API. For a private group this is fine; for a public-facing app you'd want to add auth.
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Deploy
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Push to GitHub and import into [Vercel](https://vercel.com). Set `NEXT_PUBLIC_INSTANT_APP_ID` in the Vercel environment variables.
