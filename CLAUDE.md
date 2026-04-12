@@ -23,7 +23,8 @@ No test suite is configured.
 - `instant.schema.ts` — single `entries` entity: `{ playerId, title, kind, createdAt }`
 - `instant.perms.ts` — public view + create, no update/delete (intentional; see README tradeoff note)
 - `src/lib/db.ts` — exports the singleton `db` client (uses `NEXT_PUBLIC_INSTANT_APP_ID`)
-- Push schema/perms changes with `npx instant-cli@latest push`
+- Push schema/perms changes with `npx instant-cli@latest push` (requires `INSTANT_APP_ADMIN_TOKEN`)
+- `serverCreatedAt` vs `createdAt`: entries write a client `createdAt`, but the query orders by `serverCreatedAt` (InstantDB-assigned). The recent-activity feed renders `e.createdAt`. These are separate fields — don't conflate them.
 
 ### Configuration — `src/lib/config.ts`
 
@@ -45,7 +46,7 @@ Both pages are `"use client"` — there is no server rendering.
 
 ### Key libs
 
-- `src/lib/entry-stats.ts` — `aggregateByPlayer`: folds raw entries into `{ gg, matches, lastGg, lastMatch }` per player.
+- `src/lib/entry-stats.ts` — `aggregateByPlayer`: folds raw entries into `{ gg, matches, lastGg, lastMatch }` per player. `ggCountsByDay`: returns last 14 days of GG counts (local time) for the bar chart.
 - `src/lib/log-entries.ts` — `logGgAndMatchesBatch`: builds one DB transaction per unit (offset timestamps by 1ms to preserve insertion order).
 
 ### UI
@@ -57,5 +58,7 @@ npx shadcn@latest add <component>
 ```
 
 **Important:** these components use `@base-ui/react` as the primitive layer (not Radix UI). The APIs and import paths differ from standard shadcn/ui — always check the generated file rather than assuming Radix conventions apply.
+
+Charts use `recharts` via the `ChartContainer`/`ChartConfig` wrapper in `src/components/ui/chart.tsx`. Series colors are set via `var(--color-<dataKey>)` (resolved by `ChartContainer` from the config object) — not raw CSS vars like `--chart-1` directly in JSX.
 
 Tailwind CSS v4 + `tw-animate-css`. Dark mode forced via `className="dark"` on `<html>`. Icons from `lucide-react` and `@phosphor-icons/react`.

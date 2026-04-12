@@ -11,8 +11,8 @@ export function logGgAndMatchesBatch(
   ggByPlayer: Record<string, number>,
   matchesByPlayer: Record<string, number>
 ) {
-  const txs: TransactionChunk<any, any>[] = [];
-  let t = Date.now();
+  const txs: TransactionChunk<"entries", Record<string, unknown>>[] = [];
+  const t = Date.now();
   let o = 0;
 
   const push = (playerId: string, n: number, kind: string) => {

@@ -11,8 +11,7 @@ const _schema = i.schema({
   },
 });
 
-type _AppSchema = typeof _schema;
-interface AppSchema extends _AppSchema {}
+type AppSchema = typeof _schema;
 const schema: AppSchema = _schema;
 
 export type { AppSchema };

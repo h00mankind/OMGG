@@ -1,15 +1,14 @@
 "use client";
 
-import Link from "next/link";
 import { useCallback, useMemo, useState } from "react";
-import { CURRENT_TITLE, ROSTER, GROUPS } from "@/lib/config";
+import { ROSTER, GROUPS } from "@/lib/config";
 import { logGgAndMatchesBatch } from "@/lib/log-entries";
 import { Badge } from "@/components/ui/badge";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Toaster, toast } from "sonner";
-import { ArrowLeft, Minus, Plus, Trophy, Swords } from "lucide-react";
+import { toast } from "sonner";
+import { Check, Minus, Plus, Trophy, Swords } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type LogKind = "gg" | "match";
@@ -180,7 +179,7 @@ function PlayerSteppers({
 
 export default function LogPage() {
   const [kind, setKind] = useState<LogKind>("match");
-  const [phase, setPhase] = useState<"select" | "confirm">("select");
+  const [phase, setPhase] = useState<"select" | "confirm" | "success">("select");
   const [matchCounts, setMatchCounts] = useState(zeroCounts);
   const [ggCounts, setGgCounts] = useState(zeroCounts);
 
@@ -189,7 +188,7 @@ export default function LogPage() {
 
   const bump = useCallback(
     (playerId: string, delta: number) => {
-      if (phase === "confirm") return;
+      if (phase !== "select") return;
       setCounts((prev) => ({
         ...prev,
         [playerId]: Math.max(0, (prev[playerId] ?? 0) + delta),
@@ -246,7 +245,8 @@ export default function LogPage() {
     const kindLabel = kind === "gg" ? "GG" : formatMatchWord(total);
     const parts = summaryItems.map((p) => `${p.name} +${p.count}`);
     toast.success(`${kindLabel}: ${parts.join(", ")}`);
-    resetFlow();
+    setPhase("success");
+    setTimeout(resetFlow, 900);
   };
 
   const confirmSummary =
@@ -263,48 +263,16 @@ export default function LogPage() {
     .join(", ");
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <Toaster richColors position="top-center" />
-
-      <div className="mx-auto max-w-2xl px-4 py-8 space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <Link
-            href="/"
-            className={cn(
-              buttonVariants({ variant: "ghost", size: "sm" }),
-              "w-fit gap-1.5 px-0"
-            )}
-          >
-            <ArrowLeft className="size-4" aria-hidden />
-            Back to leaderboard
-          </Link>
-          <Badge variant="secondary" className="w-fit">
-            {CURRENT_TITLE}
-          </Badge>
-        </div>
-
-        <header className="space-y-1">
-          <h1 className="text-2xl font-bold tracking-tight">Quick log</h1>
-          <p className="text-sm text-muted-foreground">
-            {phase === "select"
-              ? "Pick what to log, set counts, then confirm."
-              : "Confirm to save."}
-          </p>
-        </header>
-
+    <div className="mx-auto max-w-2xl px-8 pt-4 pb-32 space-y-5">
         {/* Kind toggle */}
         <section className="space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            What happened?
-          </h2>
           <div className="grid grid-cols-2 gap-2">
             <Button
               variant={kind === "match" ? "default" : "outline"}
               size="lg"
-              disabled={phase === "confirm"}
+              disabled={phase !== "select"}
               onClick={() => setKind("match")}
-              className={cn(phase === "confirm" && "opacity-60")}
+              className={cn(phase !== "select" && "opacity-60")}
             >
               <Swords className="size-4" aria-hidden />
               Match
@@ -312,9 +280,9 @@ export default function LogPage() {
             <Button
               variant={kind === "gg" ? "default" : "outline"}
               size="lg"
-              disabled={phase === "confirm"}
+              disabled={phase !== "select"}
               onClick={() => setKind("gg")}
-              className={cn(phase === "confirm" && "opacity-60")}
+              className={cn(phase !== "select" && "opacity-60")}
             >
               <Trophy className="size-4" aria-hidden />
               GG
@@ -327,7 +295,7 @@ export default function LogPage() {
           <GroupChips
             counts={matchCounts}
             setCounts={setMatchCounts}
-            disabled={phase === "confirm"}
+            disabled={phase !== "select"}
           />
         )}
 
@@ -336,12 +304,12 @@ export default function LogPage() {
           label={kind === "match" ? "Matches per player" : "GG per player"}
           counts={counts}
           bump={bump}
-          disabled={phase === "confirm"}
+          disabled={phase !== "select"}
         />
 
         {/* Action area */}
-        <div className="sticky bottom-4 pt-2 space-y-3">
-          {phase === "select" ? (
+        <div className="sticky bottom-28 pt-2 space-y-3 rounded-xl bg-background/85 backdrop-blur-md -mx-4 px-4 z-30">
+          {phase === "select" && (
             <Button
               size="lg"
               className="w-full"
@@ -352,7 +320,18 @@ export default function LogPage() {
                 ? `Review — ${total} ${formatMatchWord(total)}`
                 : `Review — ${total} GG`}
             </Button>
-          ) : (
+          )}
+          {phase === "success" && (
+            <Button
+              size="lg"
+              className="w-full bg-emerald-600 text-white hover:bg-emerald-600 transition-all"
+              disabled
+            >
+              <Check className="size-5" aria-hidden />
+              Logged!
+            </Button>
+          )}
+          {phase === "confirm" && (
             <Card>
               <CardHeader>
                 <CardTitle>{confirmSummary}?</CardTitle>
@@ -378,7 +357,6 @@ export default function LogPage() {
             </Card>
           )}
         </div>
-      </div>
     </div>
   );
 }
