@@ -4,7 +4,13 @@ import Link from "next/link";
 import db from "@/lib/db";
 import { CURRENT_TITLE, ROSTER } from "@/lib/config";
 import { entryKindShortLabel, normalizeEntryKind } from "@/lib/entry-kinds";
-import { aggregateByPlayer } from "@/lib/entry-stats";
+import { aggregateByPlayer, ggCountsByDay } from "@/lib/entry-stats";
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from "@/components/ui/chart";
 import { Badge } from "@/components/ui/badge";
 import { buttonVariants } from "@/components/ui/button";
 import { Card, CardAction, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -18,6 +24,7 @@ import {
 } from "@/components/ui/table";
 import { Toaster } from "sonner";
 import { Plus } from "lucide-react";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { cn } from "@/lib/utils";
 
 function timeAgo(date: Date): string {
@@ -34,6 +41,13 @@ function timeAgo(date: Date): string {
 
 const rosterById = new Map(ROSTER.map((p) => [p.id, p]));
 
+const dayGgChartConfig = {
+  gg: {
+    label: "GG",
+    color: "var(--chart-1)",
+  },
+} satisfies ChartConfig;
+
 export default function Home() {
   const { isLoading, error, data } = db.useQuery({
     entries: {
@@ -46,6 +60,7 @@ export default function Home() {
 
   const entries = data?.entries ?? [];
   const byPlayer = aggregateByPlayer(entries);
+  const dayGgSeries = ggCountsByDay(entries);
 
   const leaderboard = ROSTER.map((p) => ({
     ...p,
@@ -144,6 +159,50 @@ export default function Home() {
                     ))}
                   </TableBody>
                 </Table>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Daily GG</CardTitle>
+                <CardDescription>
+                  GG logged per day (last 14 days, local time). Matches are not
+                  included.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <ChartContainer
+                  config={dayGgChartConfig}
+                  className="aspect-auto h-56 w-full"
+                >
+                  <BarChart
+                    data={dayGgSeries}
+                    margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid vertical={false} />
+                    <XAxis
+                      dataKey="label"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      interval={0}
+                      fontSize={11}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      width={36}
+                    />
+                    <ChartTooltip content={<ChartTooltipContent />} />
+                    <Bar
+                      dataKey="gg"
+                      fill="var(--color-gg)"
+                      radius={4}
+                    />
+                  </BarChart>
+                </ChartContainer>
               </CardContent>
             </Card>
 
