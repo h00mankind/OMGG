@@ -11,7 +11,8 @@ export function logGgAndMatchesBatch(
   ggByPlayer: Record<string, number>,
   matchesByPlayer: Record<string, number>
 ) {
-  const txs: TransactionChunk<"entries", Record<string, unknown>>[] = [];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const txs: TransactionChunk<any, any>[] = [];
   const t = Date.now();
   let o = 0;
 
