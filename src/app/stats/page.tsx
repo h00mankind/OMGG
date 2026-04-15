@@ -64,6 +64,9 @@ export default function StatsPage() {
       mvp: 0,
       svp: 0,
       totalTitles: 0,
+      lastGg: null,
+      lastMvp: null,
+      lastSvp: null,
     }),
     ...(matchByPlayer.get(p.id) ?? {
       matches: 0,
