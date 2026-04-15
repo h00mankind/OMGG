@@ -37,8 +37,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       <main className="flex-1">{children}</main>
 
+      {/* Progressive blur gradient behind nav */}
+      <div
+        aria-hidden
+        className="pointer-events-none fixed bottom-0 left-0 right-0 z-[39]"
+        style={{ height: "calc(env(safe-area-inset-bottom) + 7rem)" }}
+      >
+        <div className="h-full w-full bg-gradient-to-t from-background via-background/70 to-transparent" />
+      </div>
+
       <nav
-        className="pointer-events-none sticky bottom-0 z-40 flex justify-center px-8"
+        className="pointer-events-none fixed bottom-0 left-0 right-0 z-40 flex justify-center px-8 will-change-transform"
         style={{ paddingBottom: "calc(env(safe-area-inset-bottom) + 1rem)" }}
       >
         <div

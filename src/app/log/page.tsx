@@ -351,7 +351,7 @@ export default function LogPage() {
   const showScan = phase === "review" && scan;
 
   return (
-    <div className="mx-auto max-w-2xl px-4 pt-4 pb-32 space-y-5">
+    <div className="mx-auto max-w-2xl px-8 pt-4 pb-32 space-y-5">
       <input
         ref={fileInputRef}
         type="file"
@@ -431,7 +431,10 @@ export default function LogPage() {
       )}
 
       {/* Sticky action bar */}
-      <div className="sticky bottom-28 pt-2 -mx-4 px-4 z-30 bg-background/85 backdrop-blur-md">
+      <div className="sticky bottom-28 -mx-8 px-8 z-30 will-change-transform">
+        {/* Progressive blur fade above the action bar */}
+        <div aria-hidden className="pointer-events-none h-8 bg-gradient-to-b from-transparent to-background/85" />
+        <div className="pb-3 bg-background/85 backdrop-blur-md">
         {phase === "idle" && (
           <Button
             size="lg"
@@ -468,6 +471,7 @@ export default function LogPage() {
             Logged!
           </Button>
         )}
+        </div>
       </div>
     </div>
   );
@@ -498,7 +502,7 @@ function ManualEntry({
       <section className="space-y-2">
         <h2 className="text-sm font-medium text-muted-foreground">
           Who played?{" "}
-          <span className="text-foreground/60">Tap to cycle W → L → off</span>
+          <span className="text-foreground/60">Click again on the name to cycle W → L → off</span>
         </h2>
         <div className="grid grid-cols-1 gap-2">
           {ROSTER.map((player) => {
@@ -655,6 +659,13 @@ function TitleRow({
 /* ------------------------------------------------------------------ */
 /*  Scan review (AI flow)                                              */
 /* ------------------------------------------------------------------ */
+
+function titleBadgeClass(key: string): string {
+  if (key === "mvp") return "bg-orange-500/15 text-orange-400 border-orange-500/30";
+  if (key === "svp") return "bg-yellow-500/15 text-yellow-400 border-yellow-500/30";
+  // gg → white/zinc
+  return "bg-zinc-100/10 text-zinc-200 border-zinc-400/30";
+}
 
 function AddTitleSelect({ onAdd }: { onAdd: (key: string) => void }) {
   return (
@@ -823,7 +834,7 @@ function ScanReview({
                 <Badge
                   key={index}
                   variant="outline"
-                  className="text-xs flex items-center gap-1"
+                  className={cn("text-xs flex items-center gap-1", titleBadgeClass(t.key))}
                 >
                   {t.label} · {t.displayName}
                   <button
@@ -885,11 +896,11 @@ function ScanSideList({
               key={p.slot}
               className={cn(
                 "w-full rounded-md border px-3 py-2 flex items-center gap-3 transition-colors",
-                selected
-                  ? "border-primary bg-primary/10"
-                  : isRoster
-                    ? "border-border"
-                    : "border-border/50 bg-muted/20"
+                !isRoster && "border-border/50 bg-muted/20",
+                isRoster && p.won && selected && "border-emerald-500/60 bg-emerald-500/10",
+                isRoster && p.won && !selected && "border-emerald-500/30 bg-emerald-500/5",
+                isRoster && !p.won && selected && "border-red-500/60 bg-red-500/10",
+                isRoster && !p.won && !selected && "border-red-500/30 bg-red-500/5"
               )}
             >
               <button
@@ -899,9 +910,9 @@ function ScanSideList({
                 aria-label={selected ? "Unselect" : "Select"}
                 className={cn(
                   "size-4 rounded border flex items-center justify-center shrink-0",
-                  selected
-                    ? "bg-primary border-primary text-primary-foreground"
-                    : "border-muted-foreground/40",
+                  selected && p.won && "bg-emerald-500 border-emerald-500 text-white",
+                  selected && !p.won && "bg-red-500 border-red-500 text-white",
+                  !selected && "border-muted-foreground/40",
                   !isRoster && "opacity-40 cursor-not-allowed"
                 )}
               >
@@ -922,7 +933,7 @@ function ScanSideList({
                     <Badge
                       key={index}
                       variant="secondary"
-                      className="text-[10px] bg-amber-500/15 text-amber-500 border-amber-500/30 flex items-center gap-1"
+                      className={cn("text-[10px] flex items-center gap-1", titleBadgeClass(t.key))}
                     >
                       {t.label}
                       <button
