@@ -534,6 +534,8 @@ export function aggregateMatchesByPlayer(
   const matchEntries = new Map<string, EntryRow[]>();
   const winEntries = new Map<string, EntryRow[]>();
   const lossEntries = new Map<string, EntryRow[]>();
+  // Used only for legacy inference: GG title at same timestamp → the player lost.
+  const ggEntries = new Map<string, EntryRow[]>();
 
   for (const entry of entries) {
     if (!isRosterPlayer(entry.playerId)) continue;
@@ -545,14 +547,16 @@ export function aggregateMatchesByPlayer(
           ? winEntries
           : kind === ENTRY_KIND_LOSS
             ? lossEntries
-            : null;
+            : kind === ENTRY_KIND_GG
+              ? ggEntries
+              : null;
     if (!target) continue;
     const list = target.get(entry.playerId) ?? [];
     list.push(entry);
     target.set(entry.playerId, list);
   }
 
-  for (const index of [matchEntries, winEntries, lossEntries]) {
+  for (const index of [matchEntries, winEntries, lossEntries, ggEntries]) {
     for (const list of index.values()) {
       list.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
     }
@@ -583,6 +587,9 @@ export function aggregateMatchesByPlayer(
         consumeNearestEntry(winEntries, playerId, at, 2_000);
       } else if (won === false) {
         consumeNearestEntry(lossEntries, playerId, at, 2_000);
+        // Consume any GG title entry for this loser so it doesn't surface as an
+        // orphan in the pass below and produce a double-counted loss.
+        consumeNearestEntry(ggEntries, playerId, at, 2_000);
       }
     }
   }
@@ -609,16 +616,37 @@ export function aggregateMatchesByPlayer(
     for (const playerId of cluster.players) {
       const agg = byPlayer.get(playerId);
       if (!agg) continue;
-      let won: boolean | null = null;
-      if (consumeEntryInSecond(winEntries, playerId, key)) won = true;
-      else if (consumeEntryInSecond(lossEntries, playerId, key)) won = false;
+      let won: boolean;
+      if (consumeEntryInSecond(winEntries, playerId, key)) {
+        won = true;
+      } else if (consumeEntryInSecond(lossEntries, playerId, key)) {
+        won = false;
+      } else {
+        // Legacy entry: no explicit win/loss written. Infer from GG title presence:
+        // a GG entry at the same second means the player received the worst-loser
+        // title → they lost. No GG → assume win.
+        won = !consumeEntryInSecond(ggEntries, playerId, key);
+      }
       recordMatchParticipation(agg, cluster.at, won);
+    }
+  }
+
+  // Orphaned GG entries: a GG title that has no paired `match` entry in the same
+  // second (i.e. the GG was logged standalone, or the match entry crossed a second
+  // boundary). Every GG title means the player lost, so record each as a loss.
+  let orphanedGgCount = 0;
+  for (const [playerId, leftoverGgs] of ggEntries) {
+    const agg = byPlayer.get(playerId);
+    if (!agg) continue;
+    for (const entry of leftoverGgs) {
+      recordMatchParticipation(agg, entry.createdAt, false);
+      orphanedGgCount++;
     }
   }
 
   return {
     byPlayer,
-    totalMatches: normalizedTotalMatches + legacyClusters.size,
-    inferredLegacyMatches: legacyClusters.size,
+    totalMatches: normalizedTotalMatches + legacyClusters.size + orphanedGgCount,
+    inferredLegacyMatches: legacyClusters.size + orphanedGgCount,
   };
 }
