@@ -67,6 +67,11 @@ export function buildPrompt(
     "mentally when matching. If a player cannot be confidently mapped to a roster " +
     "id, set rosterId to null. You ALSO extract up to three flavor titles from " +
     "the post-match awards panel: MVP, SVP, and GG (the loser-side flavor title). " +
+    "For match outcome, you MUST read the large victory banner at the center top " +
+    "of the screenshot. It usually says 'Radiant wins' or 'Dire wins' (sometimes " +
+    "'Radiant victory' / 'Dire victory'). This banner is the source of truth for " +
+    "winningSide. Do NOT infer the winner from title placement, roster presence, " +
+    "or which side contains familiar players. " +
     "Output ONLY the JSON object. No prose. No markdown fences.";
 
   const user = `Roster (id (display name)):
@@ -98,6 +103,10 @@ Return a single JSON object with this EXACT shape:
 
 Rules:
 - "players" must contain exactly 10 entries.
+- Determine "winningSide" from the large center-top victory banner only:
+  "Radiant wins" / "Dire wins" (or equivalent victory wording).
+- The victory banner is the source of truth. If the screenshot shows one of our
+  roster members on the losing side, keep them on the losing side.
 - "won" is true iff the player's side equals winningSide.
 - "durationSeconds" = minutes*60 + seconds from the visible match timer.
 - "rosterId" MUST be one of the listed ids above or null. Do not invent new ids.
@@ -117,6 +126,7 @@ Titles — ONLY these three keys exist. Ignore everything else in the awards pan
             Chinese: 白板 / 白板先生 / GG.
 
 Instructions for the titles panel:
+- Do NOT use MVP/SVP/GG title placement to decide "winningSide".
 - Emit AT MOST ONE "mvp" (best player, winning side).
 - Emit AT MOST ONE "svp" (best loser, losing side).
 - Emit AT MOST ONE "gg" (worst player, losing side).
@@ -155,8 +165,11 @@ function toNullableNumber(v: unknown): number | null {
 
 function toSide(v: unknown): Side | null {
   if (typeof v !== "string") return null;
-  const lower = v.toLowerCase();
-  return SIDES.includes(lower as Side) ? (lower as Side) : null;
+  const lower = v.toLowerCase().trim();
+  if (SIDES.includes(lower as Side)) return lower as Side;
+  if (lower.includes("radiant")) return "radiant";
+  if (lower.includes("dire")) return "dire";
+  return null;
 }
 
 /**

@@ -311,6 +311,20 @@ export default function LogPage() {
     });
   };
 
+  const setScanWinningSide = (winningSide: "radiant" | "dire") => {
+    setScan((prev) => {
+      if (!prev || prev.winningSide === winningSide) return prev;
+      return {
+        ...prev,
+        winningSide,
+        players: prev.players.map((player) => ({
+          ...player,
+          won: player.side === winningSide,
+        })),
+      };
+    });
+  };
+
   const removeTitleAt = (index: number) => {
     setScan((prev) => {
       if (!prev) return prev;
@@ -413,6 +427,7 @@ export default function LogPage() {
           imageUrl={scanImageUrl}
           selection={scanSelection}
           toggle={toggleScanRow}
+          onSetWinningSide={setScanWinningSide}
           onReassignPlayer={setScanPlayerRoster}
           onAddTitle={addTitleToPlayer}
           onRemoveTitle={removeTitleAt}
@@ -729,6 +744,7 @@ function ScanReview({
   imageUrl,
   selection,
   toggle,
+  onSetWinningSide,
   onReassignPlayer,
   onAddTitle,
   onRemoveTitle,
@@ -738,6 +754,7 @@ function ScanReview({
   imageUrl: string | null;
   selection: Record<number, boolean>;
   toggle: (slot: number) => void;
+  onSetWinningSide: (winningSide: "radiant" | "dire") => void;
   onReassignPlayer: (slot: number, rosterId: string | null) => void;
   onAddTitle: (slot: number, key: string) => void;
   onRemoveTitle: (index: number) => void;
@@ -791,6 +808,31 @@ function ScanReview({
           <Button variant="ghost" size="sm" onClick={onBack}>
             Back
           </Button>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Result
+          </span>
+          <div className="flex border border-border overflow-hidden">
+            {(["radiant", "dire"] as const).map((side) => (
+              <button
+                key={side}
+                type="button"
+                onClick={() => onSetWinningSide(side)}
+                className={cn(
+                  "px-2.5 py-1 text-xs font-medium transition-colors",
+                  scan.winningSide === side
+                    ? "bg-primary text-primary-foreground"
+                    : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {side === "radiant" ? "Radiant Won" : "Dire Won"}
+              </button>
+            ))}
+          </div>
+          <span className="text-xs text-muted-foreground">
+            Use this if OCR picked the wrong winner.
+          </span>
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
