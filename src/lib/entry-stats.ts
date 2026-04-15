@@ -3,6 +3,8 @@ import {
   ENTRY_KIND_GG,
   ENTRY_KIND_LOSS,
   ENTRY_KIND_MATCH,
+  ENTRY_KIND_MVP,
+  ENTRY_KIND_SVP,
   ENTRY_KIND_WIN,
   normalizeEntryKind,
 } from "@/lib/entry-kinds";
@@ -81,24 +83,45 @@ export function ggCountsByDay(
 
 export type PlayerAgg = {
   gg: number;
+  mvp: number;
+  svp: number;
+  totalTitles: number;
   matches: number;
   wins: number;
   losses: number;
   lastGg: Date | null;
+  lastMvp: Date | null;
+  lastSvp: Date | null;
   lastMatch: Date | null;
   lastWin: Date | null;
   lastLoss: Date | null;
 };
+
+export type RankMetric =
+  | typeof ENTRY_KIND_GG
+  | typeof ENTRY_KIND_MVP
+  | typeof ENTRY_KIND_SVP;
+
+export const RANK_METRICS: RankMetric[] = [
+  ENTRY_KIND_MVP,
+  ENTRY_KIND_SVP,
+  ENTRY_KIND_GG,
+];
 
 function emptyAggMap(): Map<string, PlayerAgg> {
   const m = new Map<string, PlayerAgg>();
   for (const r of ROSTER) {
     m.set(r.id, {
       gg: 0,
+      mvp: 0,
+      svp: 0,
+      totalTitles: 0,
       matches: 0,
       wins: 0,
       losses: 0,
       lastGg: null,
+      lastMvp: null,
+      lastSvp: null,
       lastMatch: null,
       lastWin: null,
       lastLoss: null,
@@ -112,9 +135,18 @@ export function ggStackedByDay(
   entries: EntryRow[],
   windowDays: number = DEFAULT_GG_DAY_WINDOW
 ): DayGgStackPoint[] {
+  return titleStackedByDay(entries, ENTRY_KIND_GG, windowDays);
+}
+
+/** Per-player title counts per calendar day, last `windowDays` days. Matches excluded. */
+export function titleStackedByDay(
+  entries: EntryRow[],
+  metric: RankMetric,
+  windowDays: number = DEFAULT_GG_DAY_WINDOW
+): DayGgStackPoint[] {
   const counts = new Map<string, Map<string, number>>();
   for (const e of entries) {
-    if (normalizeEntryKind(e.kind) !== ENTRY_KIND_GG) continue;
+    if (normalizeEntryKind(e.kind) !== metric) continue;
     const key = dayKeyLocal(e.createdAt);
     if (!counts.has(key)) counts.set(key, new Map());
     const dm = counts.get(key)!;
@@ -185,24 +217,42 @@ export function computeStreaks(entries: EntryRow[]): StreakInfo {
 
 export type Trend = "up" | "down" | "flat";
 
+export function playerMetricCount(agg: PlayerAgg, metric: RankMetric): number {
+  if (metric === ENTRY_KIND_MVP) return agg.mvp;
+  if (metric === ENTRY_KIND_SVP) return agg.svp;
+  return agg.gg;
+}
+
+export function playerMetricLastAt(
+  agg: PlayerAgg,
+  metric: RankMetric
+): Date | null {
+  if (metric === ENTRY_KIND_MVP) return agg.lastMvp;
+  if (metric === ENTRY_KIND_SVP) return agg.lastSvp;
+  return agg.lastGg;
+}
+
 /** Compute rank (0-based) from a subset of entries using the same sort as the leaderboard. */
-function rankFrom(subset: EntryRow[]): Map<string, number> {
-  const aggs = new Map<string, { gg: number; lastGg: Date | null }>();
-  for (const r of ROSTER) aggs.set(r.id, { gg: 0, lastGg: null });
+function rankFrom(
+  subset: EntryRow[],
+  metric: RankMetric = ENTRY_KIND_GG
+): Map<string, number> {
+  const aggs = new Map<string, { value: number; lastAt: Date | null }>();
+  for (const r of ROSTER) aggs.set(r.id, { value: 0, lastAt: null });
   for (const e of subset) {
-    if (normalizeEntryKind(e.kind) !== ENTRY_KIND_GG) continue;
+    if (normalizeEntryKind(e.kind) !== metric) continue;
     const a = aggs.get(e.playerId);
     if (!a) continue;
-    a.gg++;
-    if (!a.lastGg || e.createdAt > a.lastGg) a.lastGg = e.createdAt;
+    a.value++;
+    if (!a.lastAt || e.createdAt > a.lastAt) a.lastAt = e.createdAt;
   }
   const sorted = [...ROSTER].sort((a, b) => {
     const ag = aggs.get(a.id)!;
     const bg = aggs.get(b.id)!;
-    if (bg.gg !== ag.gg) return bg.gg - ag.gg;
-    if (ag.lastGg && bg.lastGg) return bg.lastGg.getTime() - ag.lastGg.getTime();
-    if (ag.lastGg) return -1;
-    if (bg.lastGg) return 1;
+    if (bg.value !== ag.value) return bg.value - ag.value;
+    if (ag.lastAt && bg.lastAt) return bg.lastAt.getTime() - ag.lastAt.getTime();
+    if (ag.lastAt) return -1;
+    if (bg.lastAt) return 1;
     return 0;
   });
   const out = new Map<string, number>();
@@ -214,13 +264,16 @@ function rankFrom(subset: EntryRow[]): Map<string, number> {
  * Trend based on rank position change: today's rank vs rank as of end of yesterday.
  * "up" = moved up (lower rank number), "down" = dropped, "flat" = no change.
  */
-export function trendByPlayer(entries: EntryRow[]): Map<string, Trend> {
+export function trendByPlayer(
+  entries: EntryRow[],
+  metric: RankMetric = ENTRY_KIND_GG
+): Map<string, Trend> {
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
 
-  const currentRanks = rankFrom(entries);
+  const currentRanks = rankFrom(entries, metric);
   const prevEntries = entries.filter((e) => e.createdAt.getTime() < todayStart.getTime());
-  const prevRanks = rankFrom(prevEntries);
+  const prevRanks = rankFrom(prevEntries, metric);
 
   const out = new Map<string, Trend>();
   for (const r of ROSTER) {
@@ -247,9 +300,18 @@ export function ggStackedByWeek(
   entries: EntryRow[],
   windowWeeks = 12
 ): DayGgStackPoint[] {
+  return titleStackedByWeek(entries, ENTRY_KIND_GG, windowWeeks);
+}
+
+/** Per-player title counts per calendar week (Mon-aligned), last `windowWeeks` weeks. */
+export function titleStackedByWeek(
+  entries: EntryRow[],
+  metric: RankMetric,
+  windowWeeks = 12
+): DayGgStackPoint[] {
   const counts = new Map<string, Map<string, number>>();
   for (const e of entries) {
-    if (normalizeEntryKind(e.kind) !== ENTRY_KIND_GG) continue;
+    if (normalizeEntryKind(e.kind) !== metric) continue;
     const key = dayKeyLocal(mondayOf(e.createdAt));
     if (!counts.has(key)) counts.set(key, new Map());
     const dm = counts.get(key)!;
@@ -276,9 +338,18 @@ export function ggStackedByMonth(
   entries: EntryRow[],
   windowMonths = 6
 ): DayGgStackPoint[] {
+  return titleStackedByMonth(entries, ENTRY_KIND_GG, windowMonths);
+}
+
+/** Per-player title counts per calendar month, last `windowMonths` months. */
+export function titleStackedByMonth(
+  entries: EntryRow[],
+  metric: RankMetric,
+  windowMonths = 6
+): DayGgStackPoint[] {
   const counts = new Map<string, Map<string, number>>();
   for (const e of entries) {
-    if (normalizeEntryKind(e.kind) !== ENTRY_KIND_GG) continue;
+    if (normalizeEntryKind(e.kind) !== metric) continue;
     const key = `${e.createdAt.getFullYear()}-${String(e.createdAt.getMonth() + 1).padStart(2, "0")}`;
     if (!counts.has(key)) counts.set(key, new Map());
     const dm = counts.get(key)!;
@@ -301,8 +372,7 @@ export function ggStackedByMonth(
 
 /**
  * Per-player counts plus last-activity timestamps. Legacy rows without `kind`
- * normalize to GG. MVP/SVP are countable entries too, but they don't map to
- * any field on PlayerAgg — they're surfaced via the `matchTitles` table.
+ * normalize to GG.
  */
 export function aggregateByPlayer(entries: EntryRow[]): Map<string, PlayerAgg> {
   const map = emptyAggMap();
@@ -327,8 +397,21 @@ export function aggregateByPlayer(entries: EntryRow[]): Map<string, PlayerAgg> {
       }
     } else if (k === ENTRY_KIND_GG) {
       agg.gg++;
+      agg.totalTitles++;
       if (!agg.lastGg || e.createdAt > agg.lastGg) {
         agg.lastGg = e.createdAt;
+      }
+    } else if (k === ENTRY_KIND_MVP) {
+      agg.mvp++;
+      agg.totalTitles++;
+      if (!agg.lastMvp || e.createdAt > agg.lastMvp) {
+        agg.lastMvp = e.createdAt;
+      }
+    } else if (k === ENTRY_KIND_SVP) {
+      agg.svp++;
+      agg.totalTitles++;
+      if (!agg.lastSvp || e.createdAt > agg.lastSvp) {
+        agg.lastSvp = e.createdAt;
       }
     }
   }

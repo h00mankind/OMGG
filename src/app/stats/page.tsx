@@ -45,8 +45,24 @@ export default function StatsPage() {
 
   const sorted = ROSTER.map((p) => ({
     ...p,
+    ...(byPlayer.get(p.id) ?? {
+      gg: 0,
+      mvp: 0,
+      svp: 0,
+      totalTitles: 0,
+      matches: 0,
+      wins: 0,
+      losses: 0,
+      lastGg: null,
+      lastMvp: null,
+      lastSvp: null,
+    }),
     longest: longestByPlayer.get(p.id) ?? 0,
-  })).sort((a, b) => b.longest - a.longest);
+  })).sort((a, b) => {
+    if (b.totalTitles !== a.totalTitles) return b.totalTitles - a.totalTitles;
+    if (b.matches !== a.matches) return b.matches - a.matches;
+    return b.longest - a.longest;
+  });
 
   const selectedPlayer: PlayerDetail | null = selectedId
     ? (() => {
@@ -56,9 +72,16 @@ export default function StatsPage() {
         return {
           id: row.id,
           name: row.name,
-          gg: agg?.gg ?? 0,
-          matches: agg?.matches ?? 0,
-          lastGg: agg?.lastGg ?? null,
+          gg: agg?.gg ?? row.gg,
+          mvp: agg?.mvp ?? row.mvp,
+          svp: agg?.svp ?? row.svp,
+          totalTitles: agg?.totalTitles ?? row.totalTitles,
+          matches: agg?.matches ?? row.matches,
+          wins: agg?.wins ?? row.wins,
+          losses: agg?.losses ?? row.losses,
+          lastGg: agg?.lastGg ?? row.lastGg,
+          lastMvp: agg?.lastMvp ?? row.lastMvp,
+          lastSvp: agg?.lastSvp ?? row.lastSvp,
           longestStreak: longestByPlayer.get(row.id) ?? 0,
         };
       })()
@@ -80,78 +103,133 @@ export default function StatsPage() {
       )}
 
       {!isLoading && !error && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Flame className="size-5 text-orange-500" aria-hidden />
-              Streaks
-            </CardTitle>
-            <CardDescription>
-              Consecutive GGs by the same player without another player scoring in between.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-5">
-            {showFire ? (
-              <div className="flex items-center gap-3 rounded-xl border border-orange-500/30 bg-orange-500/10 p-4">
-                <Flame className="size-7 text-orange-500 shrink-0" aria-hidden />
-                <div className="min-w-0">
-                  <div className="font-semibold text-foreground">
-                    {currentHolder!.name} is on fire
-                  </div>
-                  <div className="text-sm text-muted-foreground">
-                    {currentLength} GG in a row — and counting
+        <>
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Flame className="size-5 text-orange-500" aria-hidden />
+                Streaks
+              </CardTitle>
+              <CardDescription>
+                Consecutive GGs by the same player without another player scoring in between.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              {showFire ? (
+                <div className="flex items-center gap-3 rounded-xl border border-orange-500/30 bg-orange-500/10 p-4">
+                  <Flame className="size-7 text-orange-500 shrink-0" aria-hidden />
+                  <div className="min-w-0">
+                    <div className="font-semibold text-foreground">
+                      {currentHolder!.name} is on fire
+                    </div>
+                    <div className="text-sm text-muted-foreground">
+                      {currentLength} GG in a row — and counting
+                    </div>
                   </div>
                 </div>
-              </div>
-            ) : (
-              <div className="rounded-none border border-dashed border-muted-foreground/30 bg-muted/20 p-4 text-center">
-                <p className="text-sm font-medium text-foreground">
-                  No active streak
-                </p>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  Log 2 GGs in a row to set one.
-                </p>
-              </div>
-            )}
+              ) : (
+                <div className="rounded-none border border-dashed border-muted-foreground/30 bg-muted/20 p-4 text-center">
+                  <p className="text-sm font-medium text-foreground">
+                    No active streak
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Log 2 GGs in a row to set one.
+                  </p>
+                </div>
+              )}
 
-            <div className="space-y-2">
-              <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Longest ever
-              </h3>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Player</TableHead>
-                    <TableHead className="text-right">Best run</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {sorted.map((p) => (
-                    <TableRow
-                      key={p.id}
-                      onClick={() => setSelectedId(p.id)}
-                      className="cursor-pointer transition-colors hover:bg-muted/50"
-                    >
-                      <TableCell className="font-medium">{p.name}</TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {p.longest > 0 ? (
-                          <span className="inline-flex items-center gap-1">
-                            {p.longest >= 3 && (
-                              <Flame className="size-3.5 text-orange-500" aria-hidden />
+              <div className="space-y-2">
+                <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                  Longest ever
+                </h3>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Player</TableHead>
+                        <TableHead className="text-right">Best run</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {sorted.map((p) => (
+                        <TableRow
+                          key={p.id}
+                          onClick={() => setSelectedId(p.id)}
+                          className="cursor-pointer transition-colors hover:bg-muted/50"
+                        >
+                          <TableCell className="font-medium">{p.name}</TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {p.longest > 0 ? (
+                              <span className="inline-flex items-center gap-1">
+                                {p.longest >= 3 && (
+                                  <Flame className="size-3.5 text-orange-500" aria-hidden />
+                                )}
+                                {p.longest}
+                              </span>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
                             )}
-                            {p.longest}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Player stats</CardTitle>
+              <CardDescription>
+                Lifetime title totals, match record, and click-through player detail.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Player</TableHead>
+                      <TableHead className="text-right">GG</TableHead>
+                      <TableHead className="text-right">MVP</TableHead>
+                      <TableHead className="text-right">SVP</TableHead>
+                      <TableHead className="text-right">Matches</TableHead>
+                      <TableHead className="text-right">W-L</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {sorted.map((p) => (
+                      <TableRow
+                        key={`stats-${p.id}`}
+                        onClick={() => setSelectedId(p.id)}
+                        className="cursor-pointer transition-colors hover:bg-muted/50"
+                      >
+                        <TableCell>
+                          <div className="font-medium">{p.name}</div>
+                          <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                            Titles {p.totalTitles} · Win rate{" "}
+                            {p.matches > 0
+                              ? `${Math.round((p.wins / p.matches) * 100)}%`
+                              : "—"}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">{p.gg}</TableCell>
+                        <TableCell className="text-right tabular-nums">{p.mvp}</TableCell>
+                        <TableCell className="text-right tabular-nums">{p.svp}</TableCell>
+                        <TableCell className="text-right tabular-nums">{p.matches}</TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {p.matches > 0 ? `${p.wins}-${p.losses}` : "—"}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </>
       )}
 
       <PlayerDetailSheet

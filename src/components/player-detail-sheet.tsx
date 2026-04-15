@@ -4,14 +4,22 @@ import { useEffect } from "react";
 import { X, Flame } from "lucide-react";
 import type { EntryRow } from "@/lib/entry-stats";
 import { entryKindShortLabel, normalizeEntryKind } from "@/lib/entry-kinds";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 export type PlayerDetail = {
   id: string;
   name: string;
   gg: number;
+  mvp: number;
+  svp: number;
+  totalTitles: number;
   matches: number;
+  wins: number;
+  losses: number;
   lastGg: Date | null;
+  lastMvp: Date | null;
+  lastSvp: Date | null;
   longestStreak: number;
 };
 
@@ -54,10 +62,15 @@ export function PlayerDetailSheet({ player, entries, onClose }: Props) {
     .filter((e) => e.playerId === player.id)
     .slice(0, 20);
 
-  const ratio =
+  const winRate =
     player.matches > 0
-      ? ((player.gg / player.matches) * 100).toFixed(0) + "%"
+      ? ((player.wins / player.matches) * 100).toFixed(0) + "%"
       : "—";
+  const lastTitles = [
+    { label: "GG", date: player.lastGg },
+    { label: "MVP", date: player.lastMvp },
+    { label: "SVP", date: player.lastSvp },
+  ].filter((item) => item.date);
 
   return (
     <div
@@ -86,10 +99,23 @@ export function PlayerDetailSheet({ player, entries, onClose }: Props) {
               {player.name}
             </h2>
             <p className="text-xs text-muted-foreground">
-              {player.lastGg
-                ? `Last GG ${timeAgo(player.lastGg)}`
-                : "No GGs yet"}
+              {lastTitles.length > 0
+                ? `Last title ${timeAgo(
+                    [...lastTitles].sort(
+                      (a, b) => b.date!.getTime() - a.date!.getTime()
+                    )[0].date!
+                  )}`
+                : "No title entries yet"}
             </p>
+            {lastTitles.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {lastTitles.map((item) => (
+                  <Badge key={item.label} variant="outline">
+                    {item.label} {timeAgo(item.date!)}
+                  </Badge>
+                ))}
+              </div>
+            )}
           </div>
           <button
             type="button"
@@ -102,10 +128,14 @@ export function PlayerDetailSheet({ player, entries, onClose }: Props) {
         </div>
 
         <div className="px-8 py-5 space-y-6">
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="GG" value={player.gg} />
+            <Stat label="MVP" value={player.mvp} />
+            <Stat label="SVP" value={player.svp} />
+            <Stat label="Titles" value={player.totalTitles} />
             <Stat label="Matches" value={player.matches} />
-            <Stat label="GG rate" value={ratio} />
+            <Stat label="W-L" value={`${player.wins}-${player.losses}`} />
+            <Stat label="Win rate" value={winRate} />
             <Stat
               label="Best streak"
               value={player.longestStreak}

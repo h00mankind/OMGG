@@ -3,11 +3,23 @@
 import { useState } from "react";
 import db from "@/lib/db";
 import { CURRENT_TITLE, ROSTER } from "@/lib/config";
-import { entryKindShortLabel, normalizeEntryKind } from "@/lib/entry-kinds";
 import {
-  aggregateByPlayer, computeStreaks,
-  ggStackedByDay, ggStackedByWeek, ggStackedByMonth,
-  trendByPlayer, type Trend,
+  ENTRY_KIND_GG,
+  entryKindShortLabel,
+  normalizeEntryKind,
+} from "@/lib/entry-kinds";
+import {
+  aggregateByPlayer,
+  computeStreaks,
+  playerMetricCount,
+  playerMetricLastAt,
+  RANK_METRICS,
+  titleStackedByDay,
+  titleStackedByMonth,
+  titleStackedByWeek,
+  trendByPlayer,
+  type RankMetric,
+  type Trend,
 } from "@/lib/entry-stats";
 import { PlayerDetailSheet, type PlayerDetail } from "@/components/player-detail-sheet";
 import {
@@ -88,6 +100,19 @@ const dayGgChartConfig = Object.fromEntries(
   ])
 ) satisfies ChartConfig;
 
+function StatChip({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="border border-border bg-muted/20 px-3 py-2">
+      <div className="text-sm font-semibold tabular-nums text-foreground">
+        {value}
+      </div>
+      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const { isLoading, error, data } = db.useQuery({
     entries: {
@@ -99,31 +124,37 @@ export default function Home() {
   });
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [rankMetric, setRankMetric] = useState<RankMetric>(ENTRY_KIND_GG);
   const [chartInterval, setChartInterval] = useState<ChartInterval>("daily");
   const [chartType, setChartType] = useState<ChartType>("bar");
 
   const entries = data?.entries ?? [];
   const byPlayer = aggregateByPlayer(entries);
   const chartSeries =
-    chartInterval === "weekly" ? ggStackedByWeek(entries) :
-    chartInterval === "monthly" ? ggStackedByMonth(entries) :
-    ggStackedByDay(entries);
+    chartInterval === "weekly" ? titleStackedByWeek(entries, rankMetric) :
+    chartInterval === "monthly" ? titleStackedByMonth(entries, rankMetric) :
+    titleStackedByDay(entries, rankMetric);
   const { longestByPlayer } = computeStreaks(entries);
-  const trends = trendByPlayer(entries);
+  const trends = trendByPlayer(entries, rankMetric);
+  const metricLabel = entryKindShortLabel(rankMetric);
 
   const leaderboard = ROSTER.map((p) => ({
     ...p,
     ...byPlayer.get(p.id)!,
   })).sort((a, b) => {
-    if (b.gg !== a.gg) return b.gg - a.gg;
-    if (a.lastGg && b.lastGg) return b.lastGg.getTime() - a.lastGg.getTime();
-    if (a.lastGg) return -1;
-    if (b.lastGg) return 1;
+    const aValue = playerMetricCount(a, rankMetric);
+    const bValue = playerMetricCount(b, rankMetric);
+    if (bValue !== aValue) return bValue - aValue;
+    const aLast = playerMetricLastAt(a, rankMetric);
+    const bLast = playerMetricLastAt(b, rankMetric);
+    if (aLast && bLast) return bLast.getTime() - aLast.getTime();
+    if (aLast) return -1;
+    if (bLast) return 1;
     return 0;
   });
 
-  const medalFor = (rank: number, gg: number) => {
-    if (gg === 0) return "";
+  const medalFor = (rank: number, value: number) => {
+    if (value === 0) return "";
     if (rank === 0) return "🥇";
     if (rank === 1) return "🥈";
     if (rank === 2) return "🥉";
@@ -131,7 +162,20 @@ export default function Home() {
   };
 
   const recent = entries.slice(0, 10);
-  const totalGg = leaderboard.reduce((sum, p) => sum + p.gg, 0);
+  const totalMetric = leaderboard.reduce(
+    (sum, p) => sum + playerMetricCount(p, rankMetric),
+    0
+  );
+  const totals = leaderboard.reduce(
+    (sum, p) => {
+      sum.gg += p.gg;
+      sum.mvp += p.mvp;
+      sum.svp += p.svp;
+      sum.matches += p.matches;
+      return sum;
+    },
+    { gg: 0, mvp: 0, svp: 0, matches: 0 }
+  );
 
   const selectedPlayer: PlayerDetail | null = selectedId
     ? (() => {
@@ -141,8 +185,15 @@ export default function Home() {
           id: row.id,
           name: row.name,
           gg: row.gg,
+          mvp: row.mvp,
+          svp: row.svp,
+          totalTitles: row.totalTitles,
           matches: row.matches,
+          wins: row.wins,
+          losses: row.losses,
           lastGg: row.lastGg,
+          lastMvp: row.lastMvp,
+          lastSvp: row.lastSvp,
           longestStreak: longestByPlayer.get(row.id) ?? 0,
         };
       })()
@@ -167,74 +218,110 @@ export default function Home() {
           <>
             <Card>
               <CardHeader>
-                <CardTitle>Leaderboard</CardTitle>
-                <CardDescription>
-                  Ranked by GG. Matches played are tracked separately.
-                </CardDescription>
+                <div>
+                  <CardTitle>Leaderboard</CardTitle>
+                  <CardDescription>
+                    Rank by GG, MVP, or SVP. GG stays the default.
+                  </CardDescription>
+                </div>
+                <CardAction>
+                  <div className="flex border border-border overflow-hidden">
+                    {RANK_METRICS.map((metric) => (
+                      <button
+                        key={metric}
+                        onClick={() => setRankMetric(metric)}
+                        className={cn(
+                          "px-2.5 py-1 text-xs font-medium uppercase transition-colors",
+                          rankMetric === metric
+                            ? "bg-primary text-primary-foreground"
+                            : "text-muted-foreground hover:text-foreground"
+                        )}
+                      >
+                        {entryKindShortLabel(metric)}
+                      </button>
+                    ))}
+                  </div>
+                </CardAction>
               </CardHeader>
-              <CardContent>
-                {totalGg === 0 && (
+              <CardContent className="space-y-4">
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  <StatChip label="GG" value={totals.gg} />
+                  <StatChip label="MVP" value={totals.mvp} />
+                  <StatChip label="SVP" value={totals.svp} />
+                  <StatChip label="Matches" value={totals.matches} />
+                </div>
+                {totalMetric === 0 && (
                   <div className="mb-4 rounded-lg border border-dashed border-muted-foreground/30 bg-muted/30 px-4 py-6 text-center">
                     <p className="text-sm font-medium text-foreground">
-                      No GGs yet — be the first!
+                      No {metricLabel} entries yet.
                     </p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Log a win to kick off the leaderboard.
+                      Log one to kick off this ranking.
                     </p>
                   </div>
                 )}
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-16">#</TableHead>
-                      <TableHead>Player</TableHead>
-                      <TableHead className="text-right">GG</TableHead>
-                      <TableHead className="text-right">Matches</TableHead>
-                      <TableHead className="text-right whitespace-nowrap">
-                        Last GG
-                      </TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {leaderboard.map((p, i) => (
-                      <TableRow
-                        key={p.id}
-                        onClick={() => setSelectedId(p.id)}
-                        className="cursor-pointer transition-colors hover:bg-muted/50"
-                      >
-                        <TableCell>
-                          <div className="flex items-center gap-1.5">
-                            <TrendBadge trend={trends.get(p.id) ?? "flat"} />
-                            <span className="text-muted-foreground tabular-nums">
-                              {medalFor(i, p.gg) || i + 1}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="font-medium">{p.name}</TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {p.gg}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">
-                          {p.matches}
-                        </TableCell>
-                        <TableCell className="text-right text-muted-foreground text-sm whitespace-nowrap">
-                          {p.lastGg ? timeAgo(p.lastGg) : "—"}
-                        </TableCell>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-16">#</TableHead>
+                        <TableHead>Player</TableHead>
+                        <TableHead className="text-right">{metricLabel}</TableHead>
+                        <TableHead className="text-right">Matches</TableHead>
+                        <TableHead className="text-right whitespace-nowrap">
+                          Last {metricLabel}
+                        </TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                    </TableHeader>
+                    <TableBody>
+                      {leaderboard.map((p, i) => {
+                        const lastAt = playerMetricLastAt(p, rankMetric);
+                        return (
+                          <TableRow
+                            key={p.id}
+                            onClick={() => setSelectedId(p.id)}
+                            className="cursor-pointer transition-colors hover:bg-muted/50"
+                          >
+                            <TableCell>
+                              <div className="flex items-center gap-1.5">
+                                <TrendBadge trend={trends.get(p.id) ?? "flat"} />
+                                <span className="text-muted-foreground tabular-nums">
+                                  {medalFor(i, playerMetricCount(p, rankMetric)) || i + 1}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="font-medium">{p.name}</div>
+                              <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                                GG {p.gg} · MVP {p.mvp} · SVP {p.svp} · W-L {p.wins}-{p.losses}
+                              </div>
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {playerMetricCount(p, rankMetric)}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {p.matches}
+                            </TableCell>
+                            <TableCell className="text-right text-muted-foreground text-sm whitespace-nowrap">
+                              {lastAt ? timeAgo(lastAt) : "—"}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
               </CardContent>
             </Card>
 
             <Card>
               <CardHeader>
                 <div>
-                  <CardTitle>GG Chart</CardTitle>
+                  <CardTitle>{metricLabel} Chart</CardTitle>
                   <CardDescription>
                     {chartInterval === "daily" ? "Last 14 days" :
                      chartInterval === "weekly" ? "Last 12 weeks" : "Last 6 months"}
-                    {" · "}matches not included
+                    {" · "}ranking title only
                   </CardDescription>
                 </div>
                 <CardAction>
