@@ -11,6 +11,14 @@ const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
 const DEFAULT_MODEL = "qwen/qwen2.5-vl-72b-instruct";
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
+function extractJson(s: string): string {
+  const fenced = s.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+  const body = (fenced ? fenced[1] : s).trim();
+  const start = body.indexOf("{");
+  const end = body.lastIndexOf("}");
+  return start !== -1 && end > start ? body.slice(start, end + 1) : body;
+}
+
 export async function POST(request: Request): Promise<Response> {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
@@ -95,7 +103,7 @@ export async function POST(request: Request): Promise<Response> {
 
   let parsedRaw: unknown;
   try {
-    parsedRaw = JSON.parse(content);
+    parsedRaw = JSON.parse(extractJson(content));
   } catch {
     return Response.json(
       { error: "Model returned non-JSON", raw: content },

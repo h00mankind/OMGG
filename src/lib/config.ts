@@ -1,12 +1,30 @@
 export const CURRENT_TITLE = "Leaderboard";
 
-export const ROSTER: { id: string; name: string }[] = [
-  { id: "h00man", name: "h00man" },
-  { id: "ayoe", name: "Ayoe" },
-  { id: "wy", name: "WY" },
-  { id: "valen", name: "Valen" },
-  { id: "pucku", name: "pucku" },
-  { id: "mk", name: "MK" },
+export type RosterMember = {
+  id: string;
+  name: string;
+  aliases: string[];
+};
+
+export const ROSTER: RosterMember[] = [
+  { id: "h00man", name: "h00man", aliases: ["h00mankind", "YZR", "Yarzar"] },
+  { id: "ayoe", name: "Ayoe", aliases: ["Swarley"] },
+  {
+    id: "wy",
+    name: "WY",
+    aliases: ["Win Htain", "Wai Yan", "Bottom Gun", "Mickvrave"],
+  },
+  {
+    id: "valen",
+    name: "Valen",
+    aliases: ["Ko Sai", "Thorfinn", "Ko Sai Ma Sel Ya"],
+  },
+  { id: "pucku", name: "pucku", aliases: ["ziki"] },
+  {
+    id: "mk",
+    name: "MK",
+    aliases: ["Ghost of Suki-qeema", "Mad A Low Min Khant", "Min Khant"],
+  },
 ];
 
 /** Predefined groups for quick player selection. */

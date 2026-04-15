@@ -2,7 +2,6 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Toaster } from "sonner";
 import { Trophy, Plus, Flame } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CURRENT_TITLE } from "@/lib/config";
@@ -24,8 +23,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <Toaster richColors position="top-center" />
-
       <header className="sticky top-0 z-40 border-b border-border/60 bg-background/85 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-2xl items-center justify-between px-8">
           <Link

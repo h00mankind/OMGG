@@ -1,6 +1,9 @@
 import { ROSTER } from "@/lib/config";
 import {
+  ENTRY_KIND_GG,
+  ENTRY_KIND_LOSS,
   ENTRY_KIND_MATCH,
+  ENTRY_KIND_WIN,
   normalizeEntryKind,
 } from "@/lib/entry-kinds";
 
@@ -53,7 +56,7 @@ export function ggCountsByDay(
 ): DayGgPoint[] {
   const counts = new Map<string, number>();
   for (const e of entries) {
-    if (normalizeEntryKind(e.kind) === ENTRY_KIND_MATCH) continue;
+    if (normalizeEntryKind(e.kind) !== ENTRY_KIND_GG) continue;
     const key = dayKeyLocal(e.createdAt);
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
@@ -79,8 +82,12 @@ export function ggCountsByDay(
 export type PlayerAgg = {
   gg: number;
   matches: number;
+  wins: number;
+  losses: number;
   lastGg: Date | null;
   lastMatch: Date | null;
+  lastWin: Date | null;
+  lastLoss: Date | null;
 };
 
 function emptyAggMap(): Map<string, PlayerAgg> {
@@ -89,8 +96,12 @@ function emptyAggMap(): Map<string, PlayerAgg> {
     m.set(r.id, {
       gg: 0,
       matches: 0,
+      wins: 0,
+      losses: 0,
       lastGg: null,
       lastMatch: null,
+      lastWin: null,
+      lastLoss: null,
     });
   }
   return m;
@@ -103,7 +114,7 @@ export function ggStackedByDay(
 ): DayGgStackPoint[] {
   const counts = new Map<string, Map<string, number>>();
   for (const e of entries) {
-    if (normalizeEntryKind(e.kind) === ENTRY_KIND_MATCH) continue;
+    if (normalizeEntryKind(e.kind) !== ENTRY_KIND_GG) continue;
     const key = dayKeyLocal(e.createdAt);
     if (!counts.has(key)) counts.set(key, new Map());
     const dm = counts.get(key)!;
@@ -144,7 +155,7 @@ export type StreakInfo = {
  * Matches are ignored entirely.
  */
 export function computeStreaks(entries: EntryRow[]): StreakInfo {
-  const ggs = entries.filter((e) => normalizeEntryKind(e.kind) !== ENTRY_KIND_MATCH);
+  const ggs = entries.filter((e) => normalizeEntryKind(e.kind) === ENTRY_KIND_GG);
   // sort ascending by time
   const chronological = [...ggs].sort(
     (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
@@ -179,7 +190,7 @@ function rankFrom(subset: EntryRow[]): Map<string, number> {
   const aggs = new Map<string, { gg: number; lastGg: Date | null }>();
   for (const r of ROSTER) aggs.set(r.id, { gg: 0, lastGg: null });
   for (const e of subset) {
-    if (normalizeEntryKind(e.kind) === ENTRY_KIND_MATCH) continue;
+    if (normalizeEntryKind(e.kind) !== ENTRY_KIND_GG) continue;
     const a = aggs.get(e.playerId);
     if (!a) continue;
     a.gg++;
@@ -238,7 +249,7 @@ export function ggStackedByWeek(
 ): DayGgStackPoint[] {
   const counts = new Map<string, Map<string, number>>();
   for (const e of entries) {
-    if (normalizeEntryKind(e.kind) === ENTRY_KIND_MATCH) continue;
+    if (normalizeEntryKind(e.kind) !== ENTRY_KIND_GG) continue;
     const key = dayKeyLocal(mondayOf(e.createdAt));
     if (!counts.has(key)) counts.set(key, new Map());
     const dm = counts.get(key)!;
@@ -267,7 +278,7 @@ export function ggStackedByMonth(
 ): DayGgStackPoint[] {
   const counts = new Map<string, Map<string, number>>();
   for (const e of entries) {
-    if (normalizeEntryKind(e.kind) === ENTRY_KIND_MATCH) continue;
+    if (normalizeEntryKind(e.kind) !== ENTRY_KIND_GG) continue;
     const key = `${e.createdAt.getFullYear()}-${String(e.createdAt.getMonth() + 1).padStart(2, "0")}`;
     if (!counts.has(key)) counts.set(key, new Map());
     const dm = counts.get(key)!;
@@ -288,7 +299,11 @@ export function ggStackedByMonth(
   return out;
 }
 
-/** Per-player GG and match counts plus last activity per kind. Legacy rows without `kind` count as GG. */
+/**
+ * Per-player counts plus last-activity timestamps. Legacy rows without `kind`
+ * normalize to GG. MVP/SVP are countable entries too, but they don't map to
+ * any field on PlayerAgg — they're surfaced via the `matchTitles` table.
+ */
 export function aggregateByPlayer(entries: EntryRow[]): Map<string, PlayerAgg> {
   const map = emptyAggMap();
   for (const e of entries) {
@@ -300,7 +315,17 @@ export function aggregateByPlayer(entries: EntryRow[]): Map<string, PlayerAgg> {
       if (!agg.lastMatch || e.createdAt > agg.lastMatch) {
         agg.lastMatch = e.createdAt;
       }
-    } else {
+    } else if (k === ENTRY_KIND_WIN) {
+      agg.wins++;
+      if (!agg.lastWin || e.createdAt > agg.lastWin) {
+        agg.lastWin = e.createdAt;
+      }
+    } else if (k === ENTRY_KIND_LOSS) {
+      agg.losses++;
+      if (!agg.lastLoss || e.createdAt > agg.lastLoss) {
+        agg.lastLoss = e.createdAt;
+      }
+    } else if (k === ENTRY_KIND_GG) {
       agg.gg++;
       if (!agg.lastGg || e.createdAt > agg.lastGg) {
         agg.lastGg = e.createdAt;
