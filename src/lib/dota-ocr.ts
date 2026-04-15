@@ -114,16 +114,15 @@ Rules:
 
 Titles — ONLY these three keys exist. Ignore everything else in the awards panel:
     mvp  -> MVP, the BEST player overall. Awarded on the WINNING side, usually
-            gold/yellow text. Chinese: 全场最佳 / 最有价值 / MVP.
+            gold/yellow text. Written as MVP.
     svp  -> SVP, the best player on the LOSING team (the most valuable loser).
-            Awarded on the LOSING side, usually silver/yellow text. Chinese:
-            次佳 / 次席 / SVP.
+            Awarded on the LOSING side, usually silver/yellow text. Written as SVP.
     gg   -> GG, the WORST player of the match. Awarded on the LOSING side in
             plain white text. Its icon is a Chinese character that LOOKS LIKE
             the glyph "田" (a square split into four smaller squares). That
             icon is easy to confuse with the AFK/挂机 badge — if the player
             was clearly present and playing, prefer "gg" over any AFK guess.
-            Chinese: 白板 / 白板先生 / GG.
+            Chinese: 田 / 白板 / 白板先生 / GG.
 
 Instructions for the titles panel:
 - Do NOT use MVP/SVP/GG title placement to decide "winningSide".

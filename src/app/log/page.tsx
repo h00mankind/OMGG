@@ -216,16 +216,6 @@ export default function LogPage() {
   const manualTotal = manualWonIds.length + manualLostIds.length;
   const canLogManual = manualTotal > 0;
 
-  const titleCandidates = useMemo(() => {
-    const winners = manualWonIds
-      .map((id) => ROSTER.find((r) => r.id === id)!)
-      .filter(Boolean);
-    const losers = manualLostIds
-      .map((id) => ROSTER.find((r) => r.id === id)!)
-      .filter(Boolean);
-    return { winners, losers };
-  }, [manualWonIds, manualLostIds]);
-
   const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -441,7 +431,6 @@ export default function LogPage() {
           onCycle={cycleStatus}
           titles={titles}
           setTitles={setTitles}
-          candidates={titleCandidates}
         />
       )}
 
@@ -496,108 +485,151 @@ export default function LogPage() {
 /*  Manual entry                                                       */
 /* ------------------------------------------------------------------ */
 
+const MANUAL_TITLE_LABELS: Record<TitleKey, string> = {
+  mvp: "MVP",
+  svp: "SVP",
+  gg: "GG",
+};
+
+function AddManualTitleSelect({
+  options,
+  onAdd,
+}: {
+  options: TitleKey[];
+  onAdd: (key: TitleKey) => void;
+}) {
+  return (
+    <select
+      value=""
+      onChange={(e) => {
+        const v = e.target.value as TitleKey;
+        if (v) onAdd(v);
+        e.currentTarget.value = "";
+      }}
+      onClick={(e) => e.stopPropagation()}
+      className={cn(
+        "rounded border border-dashed border-border bg-transparent px-1.5 py-0.5 text-[10px] text-muted-foreground",
+        "hover:text-foreground focus:outline-none"
+      )}
+    >
+      <option value="">+ title</option>
+      {options.map((k) => (
+        <option key={k} value={k}>
+          {MANUAL_TITLE_LABELS[k]}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function ManualEntry({
   statuses,
   onCycle,
   titles,
   setTitles,
-  candidates,
 }: {
   statuses: Record<string, WlStatus>;
   onCycle: (playerId: string) => void;
   titles: Record<TitleKey, string | null>;
   setTitles: React.Dispatch<React.SetStateAction<Record<TitleKey, string | null>>>;
-  candidates: {
-    winners: { id: string; name: string }[];
-    losers: { id: string; name: string }[];
-  };
 }) {
   return (
-    <>
-      <section className="space-y-2">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Who played?{" "}
-          <span className="text-foreground/60">Click again on the name to cycle W → L → off</span>
-        </h2>
-        <div className="grid grid-cols-1 gap-2">
-          {ROSTER.map((player) => {
-            const status = statuses[player.id] ?? "off";
-            const active = status !== "off";
-            return (
-              <button
-                type="button"
-                key={player.id}
-                onClick={() => onCycle(player.id)}
-                className={cn(
-                  "w-full text-left rounded-lg border px-3 py-2.5 flex items-center gap-3 transition-colors",
-                  status === "win" &&
-                    "border-emerald-500/60 bg-emerald-500/10",
-                  status === "loss" &&
-                    "border-red-500/60 bg-red-500/10",
-                  status === "off" && "border-border hover:bg-muted/40"
-                )}
-              >
-                <Avatar className="h-9 w-9 shrink-0">
-                  <AvatarFallback
-                    className={cn(
-                      "text-xs",
-                      status === "win" && "bg-emerald-500 text-white",
-                      status === "loss" && "bg-red-500 text-white"
-                    )}
-                  >
-                    {initials(player.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <span
+    <section className="space-y-2">
+      <h2 className="text-sm font-medium text-muted-foreground">
+        Who played?{" "}
+        <span className="text-foreground/60">Tap to cycle W → L → off</span>
+      </h2>
+      <div className="grid grid-cols-2 gap-2">
+        {ROSTER.map((player) => {
+          const status = statuses[player.id] ?? "off";
+          const active = status !== "off";
+
+          // At most one title per player
+          const playerTitle =
+            TITLE_ORDER.find((k) => titles[k] === player.id) ?? null;
+
+          // Available titles only when player has none yet
+          const availableTitles =
+            playerTitle === null
+              ? TITLE_ORDER.filter((k) => {
+                  if (titles[k] !== null) return false;
+                  if (k === "mvp") return status === "win";
+                  return status === "loss";
+                })
+              : [];
+
+          return (
+            <div
+              key={player.id}
+              role="button"
+              tabIndex={0}
+              onClick={() => onCycle(player.id)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") onCycle(player.id);
+              }}
+              className={cn(
+                "rounded-lg border transition-colors px-3 py-2.5 flex items-center gap-2 cursor-pointer select-none",
+                status === "win" && "border-emerald-500/60 bg-emerald-500/10",
+                status === "loss" && "border-red-500/60 bg-red-500/10",
+                status === "off" && "border-border hover:bg-muted/40"
+              )}
+            >
+              <Avatar className="h-7 w-7 shrink-0">
+                <AvatarFallback
                   className={cn(
-                    "flex-1 text-sm font-medium truncate",
-                    active ? "text-foreground" : "text-muted-foreground"
+                    "text-xs",
+                    status === "win" && "bg-emerald-500 text-white",
+                    status === "loss" && "bg-red-500 text-white"
                   )}
                 >
-                  {player.name}
-                </span>
-                <StatusPill status={status} />
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <section className="space-y-2">
-        <h2 className="text-sm font-medium text-muted-foreground">
-          Titles <span className="text-foreground/60">(optional)</span>
-        </h2>
-        <div className="grid grid-cols-1 gap-2">
-          <TitleRow
-            label="MVP"
-            hint="best winner"
-            value={titles.mvp}
-            options={candidates.winners}
-            onChange={(id) =>
-              setTitles((prev) => ({ ...prev, mvp: id }))
-            }
-          />
-          <TitleRow
-            label="SVP"
-            hint="best loser"
-            value={titles.svp}
-            options={candidates.losers}
-            onChange={(id) =>
-              setTitles((prev) => ({ ...prev, svp: id }))
-            }
-          />
-          <TitleRow
-            label="GG"
-            hint="worst loser"
-            value={titles.gg}
-            options={candidates.losers}
-            onChange={(id) =>
-              setTitles((prev) => ({ ...prev, gg: id }))
-            }
-          />
-        </div>
-      </section>
-    </>
+                  {initials(player.name)}
+                </AvatarFallback>
+              </Avatar>
+              <span
+                className={cn(
+                  "flex-1 text-sm font-medium truncate min-w-0",
+                  active ? "text-foreground" : "text-muted-foreground"
+                )}
+              >
+                {player.name}
+              </span>
+              {/* Title control — left of status pill, stops cycle propagation */}
+              {active && playerTitle !== null && (
+                <Badge
+                  className={cn(
+                    "text-[10px] shrink-0 flex items-center gap-0.5",
+                    titleBadgeClass(playerTitle)
+                  )}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  {MANUAL_TITLE_LABELS[playerTitle]}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setTitles((prev) => ({ ...prev, [playerTitle]: null }));
+                    }}
+                    aria-label={`Remove ${MANUAL_TITLE_LABELS[playerTitle]}`}
+                    className="opacity-60 hover:opacity-100"
+                  >
+                    <X className="size-2.5" />
+                  </button>
+                </Badge>
+              )}
+              {active && playerTitle === null && availableTitles.length > 0 && (
+                <AddManualTitleSelect
+                  options={availableTitles}
+                  onAdd={(key) =>
+                    setTitles((prev) => ({ ...prev, [key]: player.id }))
+                  }
+                />
+              )}
+              <StatusPill status={status} />
+            </div>
+          );
+        })}
+      </div>
+    </section>
   );
 }
 
@@ -620,54 +652,6 @@ function StatusPill({ status }: { status: WlStatus }) {
     <Badge variant="outline" className="text-muted-foreground">
       —
     </Badge>
-  );
-}
-
-function TitleRow({
-  label,
-  hint,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  hint: string;
-  value: string | null;
-  options: { id: string; name: string }[];
-  onChange: (id: string | null) => void;
-}) {
-  const disabled = options.length === 0;
-  return (
-    <div
-      className={cn(
-        "flex items-center gap-3 rounded-lg border border-border px-3 py-2",
-        disabled && "opacity-60"
-      )}
-    >
-      <div className="min-w-16">
-        <div className="text-sm font-medium">{label}</div>
-        <div className="text-[10px] text-muted-foreground">{hint}</div>
-      </div>
-      <select
-        value={value ?? ""}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.value || null)}
-        className={cn(
-          "flex-1 rounded border border-border bg-background px-2 py-1.5 text-sm",
-          "focus:outline-none focus:ring-1 focus:ring-primary",
-          disabled && "cursor-not-allowed"
-        )}
-      >
-        <option value="">
-          {disabled ? "— no players —" : "— none —"}
-        </option>
-        {options.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.name}
-          </option>
-        ))}
-      </select>
-    </div>
   );
 }
 
