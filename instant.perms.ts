@@ -12,6 +12,22 @@ const rules = {
       delete: "false",
     },
   },
+  matches: {
+    allow: {
+      view: "true",
+      create: "true",
+      update: "false",
+      delete: "false",
+    },
+  },
+  matchPlayers: {
+    allow: {
+      view: "true",
+      create: "true",
+      update: "false",
+      delete: "false",
+    },
+  },
 } satisfies InstantRules;
 
 export default rules;

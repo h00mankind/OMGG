@@ -1,17 +1,38 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState, type ChangeEvent } from "react";
 import { ROSTER, GROUPS } from "@/lib/config";
-import { logGgAndMatchesBatch } from "@/lib/log-entries";
+import { logGgAndMatchesBatch, logMatchFromScan } from "@/lib/log-entries";
+import type { ExtractedMatch } from "@/lib/dota-ocr";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { toast } from "sonner";
-import { Check, Minus, Plus, Trophy, Swords } from "lucide-react";
+import {
+  Check,
+  Camera,
+  Loader2,
+  Minus,
+  Plus,
+  Trophy,
+  Swords,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
 type LogKind = "gg" | "match";
+type LogPhase = "select" | "confirm" | "success" | "scan-uploading" | "scan-review";
+
+const ROSTER_NAME_BY_ID: Record<string, string> = Object.fromEntries(
+  ROSTER.map((p) => [p.id, p.name])
+);
+
+function formatDuration(seconds: number | null): string {
+  if (!seconds || seconds <= 0) return "—";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
 
 const zeroCounts = () =>
   Object.fromEntries(ROSTER.map((p) => [p.id, 0])) as Record<string, number>;
@@ -179,9 +200,12 @@ function PlayerSteppers({
 
 export default function LogPage() {
   const [kind, setKind] = useState<LogKind>("match");
-  const [phase, setPhase] = useState<"select" | "confirm" | "success">("select");
+  const [phase, setPhase] = useState<LogPhase>("select");
   const [matchCounts, setMatchCounts] = useState(zeroCounts);
   const [ggCounts, setGgCounts] = useState(zeroCounts);
+  const [scan, setScan] = useState<ExtractedMatch | null>(null);
+  const [scanSelection, setScanSelection] = useState<Record<number, boolean>>({});
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const counts = kind === "match" ? matchCounts : ggCounts;
   const setCounts = kind === "match" ? setMatchCounts : setGgCounts;
@@ -229,7 +253,72 @@ export default function LogPage() {
     setPhase("select");
     setMatchCounts(zeroCounts());
     setGgCounts(zeroCounts());
+    setScan(null);
+    setScanSelection({});
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
+
+  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setPhase("scan-uploading");
+    const loadingToast = toast.loading("Analyzing screenshot…");
+    try {
+      const fd = new FormData();
+      fd.append("image", file);
+      const res = await fetch("/api/analyze-match", {
+        method: "POST",
+        body: fd,
+      });
+      const json = await res.json();
+      if (!res.ok || !json?.match) {
+        throw new Error(json?.error || `Request failed (${res.status})`);
+      }
+      const m = json.match as ExtractedMatch;
+      const seed: Record<number, boolean> = {};
+      for (const p of m.players) {
+        seed[p.slot] = p.rosterId !== null;
+      }
+      setScan(m);
+      setScanSelection(seed);
+      setPhase("scan-review");
+      toast.success("Screenshot analyzed", { id: loadingToast });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to analyze", {
+        id: loadingToast,
+      });
+      setPhase("select");
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
+  const toggleScanRow = (slot: number) => {
+    setScanSelection((prev) => ({ ...prev, [slot]: !prev[slot] }));
+  };
+
+  const scanSelectedCount = useMemo(
+    () =>
+      scan
+        ? scan.players.filter((p) => p.rosterId && scanSelection[p.slot]).length
+        : 0,
+    [scan, scanSelection]
+  );
+
+  const handleLogScan = () => {
+    if (!scan || scanSelectedCount === 0) return;
+    logMatchFromScan(scan, scanSelection);
+    const winners = scan.players.filter(
+      (p) => p.rosterId && scanSelection[p.slot] && p.won
+    ).length;
+    toast.success(
+      `Match logged — ${scanSelectedCount} roster player${
+        scanSelectedCount === 1 ? "" : "s"
+      }, ${winners} GG`
+    );
+    setPhase("success");
+    setTimeout(resetFlow, 900);
+  };
 
   const handleLog = () => {
     if (!canLog) return;
@@ -262,101 +351,324 @@ export default function LogPage() {
     )
     .join(", ");
 
+  const showManualUI = phase !== "scan-uploading" && phase !== "scan-review";
+
   return (
     <div className="mx-auto max-w-2xl px-8 pt-4 pb-32 space-y-5">
-        {/* Kind toggle */}
-        <section className="space-y-2">
-          <div className="grid grid-cols-2 gap-2">
-            <Button
-              variant={kind === "match" ? "default" : "outline"}
-              size="lg"
-              disabled={phase !== "select"}
-              onClick={() => setKind("match")}
-              className={cn(phase !== "select" && "opacity-60")}
-            >
-              <Swords className="size-4" aria-hidden />
-              Match
-            </Button>
-            <Button
-              variant={kind === "gg" ? "default" : "outline"}
-              size="lg"
-              disabled={phase !== "select"}
-              onClick={() => setKind("gg")}
-              className={cn(phase !== "select" && "opacity-60")}
-            >
-              <Trophy className="size-4" aria-hidden />
-              GG
-            </Button>
-          </div>
-        </section>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleFileChange}
+      />
 
-        {/* Group chips (match mode only) */}
-        {kind === "match" && (
-          <GroupChips
-            counts={matchCounts}
-            setCounts={setMatchCounts}
+      {/* Screenshot upload entry point */}
+      {phase === "select" && (
+        <section className="space-y-2">
+          <Button
+            variant="outline"
+            size="lg"
+            className="w-full"
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <Camera className="size-4" aria-hidden />
+            Upload match screenshot
+          </Button>
+          <p className="text-xs text-muted-foreground text-center">
+            Auto-extract match stats with AI
+          </p>
+        </section>
+      )}
+
+      {phase === "scan-uploading" && (
+        <Card>
+          <CardContent className="flex items-center justify-center gap-3 py-10">
+            <Loader2 className="size-5 animate-spin text-muted-foreground" aria-hidden />
+            <span className="text-sm text-muted-foreground">
+              Analyzing screenshot…
+            </span>
+          </CardContent>
+        </Card>
+      )}
+
+      {phase === "scan-review" && scan && (
+        <ScanReview
+          scan={scan}
+          selection={scanSelection}
+          toggle={toggleScanRow}
+          onBack={resetFlow}
+        />
+      )}
+
+      {showManualUI && (
+        <>
+          {/* Kind toggle */}
+          <section className="space-y-2">
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                variant={kind === "match" ? "default" : "outline"}
+                size="lg"
+                disabled={phase !== "select"}
+                onClick={() => setKind("match")}
+                className={cn(phase !== "select" && "opacity-60")}
+              >
+                <Swords className="size-4" aria-hidden />
+                Match
+              </Button>
+              <Button
+                variant={kind === "gg" ? "default" : "outline"}
+                size="lg"
+                disabled={phase !== "select"}
+                onClick={() => setKind("gg")}
+                className={cn(phase !== "select" && "opacity-60")}
+              >
+                <Trophy className="size-4" aria-hidden />
+                GG
+              </Button>
+            </div>
+          </section>
+
+          {/* Group chips (match mode only) */}
+          {kind === "match" && (
+            <GroupChips
+              counts={matchCounts}
+              setCounts={setMatchCounts}
+              disabled={phase !== "select"}
+            />
+          )}
+
+          {/* Per-player steppers */}
+          <PlayerSteppers
+            label={kind === "match" ? "Matches per player" : "GG per player"}
+            counts={counts}
+            bump={bump}
             disabled={phase !== "select"}
           />
+        </>
+      )}
+
+      {/* Action area */}
+      <div className="sticky bottom-28 pt-2 space-y-3 rounded-xl bg-background/85 backdrop-blur-md -mx-4 px-4 z-30">
+        {phase === "select" && (
+          <Button
+            size="lg"
+            className="w-full"
+            disabled={!canLog}
+            onClick={() => setPhase("confirm")}
+          >
+            {kind === "match"
+              ? `Review — ${total} ${formatMatchWord(total)}`
+              : `Review — ${total} GG`}
+          </Button>
         )}
-
-        {/* Per-player steppers */}
-        <PlayerSteppers
-          label={kind === "match" ? "Matches per player" : "GG per player"}
-          counts={counts}
-          bump={bump}
-          disabled={phase !== "select"}
-        />
-
-        {/* Action area */}
-        <div className="sticky bottom-28 pt-2 space-y-3 rounded-xl bg-background/85 backdrop-blur-md -mx-4 px-4 z-30">
-          {phase === "select" && (
+        {phase === "success" && (
+          <Button
+            size="lg"
+            className="w-full bg-emerald-600 text-white hover:bg-emerald-600 transition-all"
+            disabled
+          >
+            <Check className="size-5" aria-hidden />
+            Logged!
+          </Button>
+        )}
+        {phase === "confirm" && (
+          <Card>
+            <CardHeader>
+              <CardTitle>{confirmSummary}?</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground">{confirmDetail}</p>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button
+                  variant="outline"
+                  className="w-full sm:w-auto"
+                  onClick={() => setPhase("select")}
+                >
+                  Back
+                </Button>
+                <Button className="w-full sm:w-auto" onClick={handleLog}>
+                  Yes, log it
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+        {phase === "scan-review" && scan && (
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
             <Button
-              size="lg"
-              className="w-full"
-              disabled={!canLog}
-              onClick={() => setPhase("confirm")}
+              variant="outline"
+              className="w-full sm:w-auto"
+              onClick={resetFlow}
             >
-              {kind === "match"
-                ? `Review — ${total} ${formatMatchWord(total)}`
-                : `Review — ${total} GG`}
+              Discard
             </Button>
-          )}
-          {phase === "success" && (
             <Button
-              size="lg"
-              className="w-full bg-emerald-600 text-white hover:bg-emerald-600 transition-all"
-              disabled
+              className="w-full sm:flex-1"
+              disabled={scanSelectedCount === 0}
+              onClick={handleLogScan}
             >
-              <Check className="size-5" aria-hidden />
-              Logged!
+              Log match ({scanSelectedCount} player
+              {scanSelectedCount === 1 ? "" : "s"})
             </Button>
-          )}
-          {phase === "confirm" && (
-            <Card>
-              <CardHeader>
-                <CardTitle>{confirmSummary}?</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">{confirmDetail}</p>
-                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                  <Button
-                    variant="outline"
-                    className="w-full sm:w-auto"
-                    onClick={() => setPhase("select")}
-                  >
-                    Back
-                  </Button>
-                  <Button
-                    className="w-full sm:w-auto"
-                    onClick={handleLog}
-                  >
-                    Yes, log it
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          )}
-        </div>
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Scan review                                                        */
+/* ------------------------------------------------------------------ */
+
+function ScanReview({
+  scan,
+  selection,
+  toggle,
+  onBack,
+}: {
+  scan: ExtractedMatch;
+  selection: Record<number, boolean>;
+  toggle: (slot: number) => void;
+  onBack: () => void;
+}) {
+  const grouped = useMemo(() => {
+    const byId = [...scan.players].sort((a, b) => a.slot - b.slot);
+    return {
+      radiant: byId.filter((p) => p.side === "radiant"),
+      dire: byId.filter((p) => p.side === "dire"),
+    };
+  }, [scan]);
+
+  const winLabel = scan.winningSide === "radiant" ? "Radiant Wins" : "Dire Wins";
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <CardTitle>{winLabel}</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {formatDuration(scan.durationSeconds)}
+              {scan.externalMatchId ? ` · ID ${scan.externalMatchId}` : ""}
+            </p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={onBack}>
+            Back
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <ScanSideList
+          label="Radiant"
+          players={grouped.radiant}
+          selection={selection}
+          toggle={toggle}
+          won={scan.winningSide === "radiant"}
+        />
+        <ScanSideList
+          label="Dire"
+          players={grouped.dire}
+          selection={selection}
+          toggle={toggle}
+          won={scan.winningSide === "dire"}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function ScanSideList({
+  label,
+  players,
+  selection,
+  toggle,
+  won,
+}: {
+  label: string;
+  players: ExtractedMatch["players"];
+  selection: Record<number, boolean>;
+  toggle: (slot: number) => void;
+  won: boolean;
+}) {
+  return (
+    <section className="space-y-2">
+      <div className="flex items-center gap-2">
+        <h3 className="text-sm font-medium text-muted-foreground">{label}</h3>
+        {won && (
+          <Badge variant="secondary" className="text-emerald-500">
+            Won
+          </Badge>
+        )}
+      </div>
+      <div className="space-y-1.5">
+        {players.map((p) => {
+          const isRoster = p.rosterId !== null;
+          const selected = !!selection[p.slot];
+          return (
+            <button
+              key={p.slot}
+              type="button"
+              disabled={!isRoster}
+              onClick={() => toggle(p.slot)}
+              className={cn(
+                "w-full text-left rounded-md border px-3 py-2 flex items-center gap-3 transition-colors",
+                isRoster
+                  ? selected
+                    ? "border-primary bg-primary/10"
+                    : "border-border hover:bg-muted/40"
+                  : "border-border/50 opacity-60 cursor-not-allowed"
+              )}
+            >
+              <div
+                className={cn(
+                  "size-4 rounded border flex items-center justify-center shrink-0",
+                  isRoster && selected
+                    ? "bg-primary border-primary text-primary-foreground"
+                    : "border-muted-foreground/40"
+                )}
+                aria-hidden
+              >
+                {isRoster && selected && <Check className="size-3" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium truncate">
+                    {p.displayName}
+                  </span>
+                  {isRoster ? (
+                    <Badge variant="secondary" className="text-xs">
+                      {ROSTER_NAME_BY_ID[p.rosterId!]}
+                    </Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-xs">
+                      not in roster
+                    </Badge>
+                  )}
+                </div>
+                <div className="text-xs text-muted-foreground truncate">
+                  {p.hero} · {p.kills}/{p.deaths}/{p.assists} ·{" "}
+                  {p.netWorth.toLocaleString()} NW
+                  {p.mmrChange !== null && (
+                    <>
+                      {" · "}
+                      <span
+                        className={cn(
+                          p.mmrChange >= 0 ? "text-emerald-500" : "text-red-500"
+                        )}
+                      >
+                        {p.mmrChange >= 0 ? "+" : ""}
+                        {p.mmrChange} MMR
+                      </span>
+                    </>
+                  )}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </section>
   );
 }
