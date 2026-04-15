@@ -10,6 +10,7 @@ import {
 } from "@/lib/entry-kinds";
 import {
   aggregateByPlayer,
+  aggregateMatchesByPlayer,
   computeStreaks,
   playerMetricCount,
   playerMetricLastAt,
@@ -121,6 +122,13 @@ export default function Home() {
         order: { serverCreatedAt: "desc" },
       },
     },
+    matches: {
+      $: {
+        where: { title: CURRENT_TITLE },
+        order: { playedAt: "desc" },
+      },
+      players: {},
+    },
   });
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -129,7 +137,10 @@ export default function Home() {
   const [chartType, setChartType] = useState<ChartType>("bar");
 
   const entries = data?.entries ?? [];
+  const matches = data?.matches ?? [];
   const byPlayer = aggregateByPlayer(entries);
+  const matchSummary = aggregateMatchesByPlayer(matches, entries);
+  const matchByPlayer = matchSummary.byPlayer;
   const chartSeries =
     chartInterval === "weekly" ? titleStackedByWeek(entries, rankMetric) :
     chartInterval === "monthly" ? titleStackedByMonth(entries, rankMetric) :
@@ -141,6 +152,7 @@ export default function Home() {
   const leaderboard = ROSTER.map((p) => ({
     ...p,
     ...byPlayer.get(p.id)!,
+    ...matchByPlayer.get(p.id)!,
   })).sort((a, b) => {
     const aValue = playerMetricCount(a, rankMetric);
     const bValue = playerMetricCount(b, rankMetric);
@@ -171,10 +183,9 @@ export default function Home() {
       sum.gg += p.gg;
       sum.mvp += p.mvp;
       sum.svp += p.svp;
-      sum.matches += p.matches;
       return sum;
     },
-    { gg: 0, mvp: 0, svp: 0, matches: 0 }
+    { gg: 0, mvp: 0, svp: 0 }
   );
 
   const selectedPlayer: PlayerDetail | null = selectedId
@@ -248,8 +259,15 @@ export default function Home() {
                   <StatChip label="GG" value={totals.gg} />
                   <StatChip label="MVP" value={totals.mvp} />
                   <StatChip label="SVP" value={totals.svp} />
-                  <StatChip label="Matches" value={totals.matches} />
+                  <StatChip label="Matches" value={matchSummary.totalMatches} />
                 </div>
+                {matchSummary.inferredLegacyMatches > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {matchSummary.inferredLegacyMatches} legacy match
+                    {matchSummary.inferredLegacyMatches === 1 ? "" : "es"} inferred
+                    from old `entries` timestamps.
+                  </p>
+                )}
                 {totalMetric === 0 && (
                   <div className="mb-4 rounded-lg border border-dashed border-muted-foreground/30 bg-muted/30 px-4 py-6 text-center">
                     <p className="text-sm font-medium text-foreground">

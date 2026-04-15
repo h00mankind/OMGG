@@ -3,7 +3,11 @@
 import { useState } from "react";
 import db from "@/lib/db";
 import { CURRENT_TITLE, ROSTER } from "@/lib/config";
-import { aggregateByPlayer, computeStreaks } from "@/lib/entry-stats";
+import {
+  aggregateByPlayer,
+  aggregateMatchesByPlayer,
+  computeStreaks,
+} from "@/lib/entry-stats";
 import { PlayerDetailSheet, type PlayerDetail } from "@/components/player-detail-sheet";
 import {
   Card,
@@ -34,10 +38,20 @@ export default function StatsPage() {
         order: { serverCreatedAt: "desc" },
       },
     },
+    matches: {
+      $: {
+        where: { title: CURRENT_TITLE },
+        order: { playedAt: "desc" },
+      },
+      players: {},
+    },
   });
 
   const entries = data?.entries ?? [];
+  const matches = data?.matches ?? [];
   const byPlayer = aggregateByPlayer(entries);
+  const matchSummary = aggregateMatchesByPlayer(matches, entries);
+  const matchByPlayer = matchSummary.byPlayer;
   const { longestByPlayer, currentHolderId, currentLength } = computeStreaks(entries);
 
   const currentHolder = currentHolderId ? rosterById.get(currentHolderId) : null;
@@ -50,12 +64,14 @@ export default function StatsPage() {
       mvp: 0,
       svp: 0,
       totalTitles: 0,
+    }),
+    ...(matchByPlayer.get(p.id) ?? {
       matches: 0,
       wins: 0,
       losses: 0,
-      lastGg: null,
-      lastMvp: null,
-      lastSvp: null,
+      lastMatch: null,
+      lastWin: null,
+      lastLoss: null,
     }),
     longest: longestByPlayer.get(p.id) ?? 0,
   })).sort((a, b) => {
@@ -69,6 +85,7 @@ export default function StatsPage() {
         const row = sorted.find((p) => p.id === selectedId);
         if (!row) return null;
         const agg = byPlayer.get(row.id);
+        const matchAgg = matchByPlayer.get(row.id);
         return {
           id: row.id,
           name: row.name,
@@ -76,9 +93,9 @@ export default function StatsPage() {
           mvp: agg?.mvp ?? row.mvp,
           svp: agg?.svp ?? row.svp,
           totalTitles: agg?.totalTitles ?? row.totalTitles,
-          matches: agg?.matches ?? row.matches,
-          wins: agg?.wins ?? row.wins,
-          losses: agg?.losses ?? row.losses,
+          matches: matchAgg?.matches ?? row.matches,
+          wins: matchAgg?.wins ?? row.wins,
+          losses: matchAgg?.losses ?? row.losses,
           lastGg: agg?.lastGg ?? row.lastGg,
           lastMvp: agg?.lastMvp ?? row.lastMvp,
           lastSvp: agg?.lastSvp ?? row.lastSvp,
@@ -183,7 +200,7 @@ export default function StatsPage() {
             <CardHeader>
               <CardTitle>Player stats</CardTitle>
               <CardDescription>
-                Lifetime title totals, match record, and click-through player detail.
+                Lifetime title totals, normalized match record, and click-through player detail.
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -227,6 +244,13 @@ export default function StatsPage() {
                   </TableBody>
                 </Table>
               </div>
+              {matchSummary.inferredLegacyMatches > 0 && (
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Includes {matchSummary.inferredLegacyMatches} legacy match
+                  {matchSummary.inferredLegacyMatches === 1 ? "" : "es"} inferred
+                  from old `entries` timestamps.
+                </p>
+              )}
             </CardContent>
           </Card>
         </>

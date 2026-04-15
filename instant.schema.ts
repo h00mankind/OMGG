@@ -13,7 +13,7 @@ const _schema = i.schema({
       externalMatchId: i.string().optional(),
       durationSeconds: i.number(),
       winningSide: i.string(),
-      playedAt: i.date(),
+      playedAt: i.date().indexed(),
       createdAt: i.date(),
     }),
     matchPlayers: i.entity({

@@ -15,6 +15,19 @@ export type EntryRow = {
   createdAt: Date;
 };
 
+export type MatchPlayerRow = {
+  playerId?: string | null;
+  won?: boolean | null;
+  createdAt?: Date | null;
+};
+
+export type MatchRow = {
+  id?: string;
+  playedAt?: Date | null;
+  createdAt: Date;
+  players?: MatchPlayerRow[];
+};
+
 const DEFAULT_GG_DAY_WINDOW = 14;
 
 function dayKeyLocal(d: Date): string {
@@ -97,6 +110,21 @@ export type PlayerAgg = {
   lastLoss: Date | null;
 };
 
+export type MatchAgg = {
+  matches: number;
+  wins: number;
+  losses: number;
+  lastMatch: Date | null;
+  lastWin: Date | null;
+  lastLoss: Date | null;
+};
+
+export type MatchAggSummary = {
+  byPlayer: Map<string, MatchAgg>;
+  totalMatches: number;
+  inferredLegacyMatches: number;
+};
+
 export type RankMetric =
   | typeof ENTRY_KIND_GG
   | typeof ENTRY_KIND_MVP
@@ -128,6 +156,86 @@ function emptyAggMap(): Map<string, PlayerAgg> {
     });
   }
   return m;
+}
+
+function emptyMatchAggMap(): Map<string, MatchAgg> {
+  const m = new Map<string, MatchAgg>();
+  for (const r of ROSTER) {
+    m.set(r.id, {
+      matches: 0,
+      wins: 0,
+      losses: 0,
+      lastMatch: null,
+      lastWin: null,
+      lastLoss: null,
+    });
+  }
+  return m;
+}
+
+function secondKey(d: Date): string {
+  return String(Math.floor(d.getTime() / 1000));
+}
+
+function isRosterPlayer(playerId: string | null | undefined): playerId is string {
+  return typeof playerId === "string" && ROSTER.some((r) => r.id === playerId);
+}
+
+function recordMatchParticipation(
+  agg: MatchAgg,
+  at: Date,
+  won?: boolean | null
+) {
+  agg.matches++;
+  if (!agg.lastMatch || at > agg.lastMatch) {
+    agg.lastMatch = at;
+  }
+  if (won === true) {
+    agg.wins++;
+    if (!agg.lastWin || at > agg.lastWin) {
+      agg.lastWin = at;
+    }
+  } else if (won === false) {
+    agg.losses++;
+    if (!agg.lastLoss || at > agg.lastLoss) {
+      agg.lastLoss = at;
+    }
+  }
+}
+
+function consumeNearestEntry(
+  index: Map<string, EntryRow[]>,
+  playerId: string,
+  at: Date,
+  toleranceMs: number
+): EntryRow | null {
+  const list = index.get(playerId);
+  if (!list || list.length === 0) return null;
+  let bestIndex = -1;
+  let bestDelta = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < list.length; i++) {
+    const delta = Math.abs(list[i].createdAt.getTime() - at.getTime());
+    if (delta <= toleranceMs && delta < bestDelta) {
+      bestDelta = delta;
+      bestIndex = i;
+    }
+  }
+  if (bestIndex === -1) return null;
+  const [match] = list.splice(bestIndex, 1);
+  return match ?? null;
+}
+
+function consumeEntryInSecond(
+  index: Map<string, EntryRow[]>,
+  playerId: string,
+  key: string
+): EntryRow | null {
+  const list = index.get(playerId);
+  if (!list || list.length === 0) return null;
+  const idx = list.findIndex((entry) => secondKey(entry.createdAt) === key);
+  if (idx === -1) return null;
+  const [match] = list.splice(idx, 1);
+  return match ?? null;
 }
 
 /** Per-player GG counts per calendar day, last `windowDays` days. Matches excluded. */
@@ -416,4 +524,101 @@ export function aggregateByPlayer(entries: EntryRow[]): Map<string, PlayerAgg> {
     }
   }
   return map;
+}
+
+export function aggregateMatchesByPlayer(
+  matches: MatchRow[],
+  entries: EntryRow[]
+): MatchAggSummary {
+  const byPlayer = emptyMatchAggMap();
+  const matchEntries = new Map<string, EntryRow[]>();
+  const winEntries = new Map<string, EntryRow[]>();
+  const lossEntries = new Map<string, EntryRow[]>();
+
+  for (const entry of entries) {
+    if (!isRosterPlayer(entry.playerId)) continue;
+    const kind = normalizeEntryKind(entry.kind);
+    const target =
+      kind === ENTRY_KIND_MATCH
+        ? matchEntries
+        : kind === ENTRY_KIND_WIN
+          ? winEntries
+          : kind === ENTRY_KIND_LOSS
+            ? lossEntries
+            : null;
+    if (!target) continue;
+    const list = target.get(entry.playerId) ?? [];
+    list.push(entry);
+    target.set(entry.playerId, list);
+  }
+
+  for (const index of [matchEntries, winEntries, lossEntries]) {
+    for (const list of index.values()) {
+      list.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+    }
+  }
+
+  let normalizedTotalMatches = 0;
+
+  for (const match of matches) {
+    const at = match.playedAt ?? match.createdAt;
+    const rosteredPlayers = new Map<string, boolean | null | undefined>();
+
+    for (const player of match.players ?? []) {
+      if (!isRosterPlayer(player.playerId)) continue;
+      if (!rosteredPlayers.has(player.playerId)) {
+        rosteredPlayers.set(player.playerId, player.won);
+      }
+    }
+
+    if (rosteredPlayers.size === 0) continue;
+    normalizedTotalMatches++;
+
+    for (const [playerId, won] of rosteredPlayers) {
+      const agg = byPlayer.get(playerId);
+      if (!agg) continue;
+      recordMatchParticipation(agg, at, won);
+      consumeNearestEntry(matchEntries, playerId, at, 2_000);
+      if (won === true) {
+        consumeNearestEntry(winEntries, playerId, at, 2_000);
+      } else if (won === false) {
+        consumeNearestEntry(lossEntries, playerId, at, 2_000);
+      }
+    }
+  }
+
+  const legacyClusters = new Map<
+    string,
+    { at: Date; players: Set<string> }
+  >();
+
+  for (const [playerId, leftoverEntries] of matchEntries) {
+    for (const entry of leftoverEntries) {
+      const key = secondKey(entry.createdAt);
+      const cluster = legacyClusters.get(key) ?? {
+        at: entry.createdAt,
+        players: new Set<string>(),
+      };
+      cluster.players.add(playerId);
+      if (entry.createdAt < cluster.at) cluster.at = entry.createdAt;
+      legacyClusters.set(key, cluster);
+    }
+  }
+
+  for (const [key, cluster] of legacyClusters) {
+    for (const playerId of cluster.players) {
+      const agg = byPlayer.get(playerId);
+      if (!agg) continue;
+      let won: boolean | null = null;
+      if (consumeEntryInSecond(winEntries, playerId, key)) won = true;
+      else if (consumeEntryInSecond(lossEntries, playerId, key)) won = false;
+      recordMatchParticipation(agg, cluster.at, won);
+    }
+  }
+
+  return {
+    byPlayer,
+    totalMatches: normalizedTotalMatches + legacyClusters.size,
+    inferredLegacyMatches: legacyClusters.size,
+  };
 }
