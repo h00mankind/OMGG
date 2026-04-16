@@ -1,7 +1,35 @@
 {
   "permissions": {
+    "defaultMode": "auto",
     "allow": [
-      "Bash(npx create-next-app@latest . --typescript --tailwind --app --yes)"
+      "Bash(npx create-next-app@latest . --typescript --tailwind --app --yes)",
+      "Bash(git reset:*)",
+      "Bash(git checkout:*)",
+      "Bash(rtk git:*)",
+      "Bash(rtk proxy:*)",
+      "Bash(rm ~/.claude/skills/lism-css-guide)",
+      "Bash(rm -rf ~/.agents/skills/lism-css-guide)",
+      "Bash(rtk ls:*)",
+      "Bash(rtk find:*)",
+      "Bash(rtk npm:*)",
+      "Bash(rtk read:*)",
+      "Bash(kill 73596:*)",
+      "Bash(npm install:*)",
+      "Bash(kill 31892)",
+      "Bash(rtk curl:*)",
+      "Bash(git commit:*)",
+      "Skill(update-config)",
+      "WebFetch(domain:openrouter.ai)",
+      "Bash(rtk tsc:*)",
+      "Bash(rtk npx:*)",
+      "Bash(rtk lint:*)",
+      "Bash(npx eslint:*)",
+      "Bash(/Users/h0_0man/.nvm/versions/node/v23.1.0/bin/npx instant-cli@latest push --help)",
+      "Bash(/Users/h0_0man/.nvm/versions/node/v23.1.0/bin/npx -y instant-cli@latest push --help)",
+      "Bash(/Users/h0_0man/.nvm/versions/node/v23.1.0/bin/npx -y instant-cli@latest --help)",
+      "Bash(/Users/h0_0man/.nvm/versions/node/v23.1.0/bin/npx -y instant-cli@latest push)",
+      "Bash(git:*)",
+      "Bash(rtk grep *)"
     ]
   }
 }

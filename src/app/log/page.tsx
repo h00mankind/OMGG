@@ -15,6 +15,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { BorderBeam } from "border-beam";
 import {
   Check,
   Camera,
@@ -239,7 +240,10 @@ export default function LogPage() {
       });
       const json = await res.json();
       if (!res.ok || !json?.match) {
-        throw new Error(json?.error || `Request failed (${res.status})`);
+        if (json?.reason) console.error("[analyze-match] reason:", json.reason);
+        if (json?.raw) console.error("[analyze-match] raw:", json.raw);
+        const detail = json?.reason ? ` — ${json.reason}` : "";
+        throw new Error((json?.error || `Request failed (${res.status})`) + detail);
       }
       const m = json.match as ExtractedMatch;
       const seed: Record<number, boolean> = {};
@@ -401,14 +405,16 @@ export default function LogPage() {
       )}
 
       {phase === "uploading" && (
-        <Card>
-          <CardContent className="flex items-center justify-center gap-3 py-10">
-            <Loader2 className="size-5 animate-spin text-muted-foreground" aria-hidden />
-            <span className="text-sm text-muted-foreground">
-              Analyzing screenshot…
-            </span>
-          </CardContent>
-        </Card>
+        <BorderBeam size="md" colorVariant="ocean" duration={1.96} strength={0.8} borderRadius={0}>
+          <Card>
+            <CardContent className="flex items-center justify-center gap-3 py-10">
+              <Loader2 className="size-5 animate-spin text-muted-foreground" aria-hidden />
+              <span className="text-sm text-muted-foreground">
+                Analyzing screenshot…
+              </span>
+            </CardContent>
+          </Card>
+        </BorderBeam>
       )}
 
       {showScan && (
@@ -437,7 +443,7 @@ export default function LogPage() {
       {/* Sticky action bar */}
       <div className="sticky bottom-28 -mx-8 px-8 z-30 will-change-transform">
         {/* Progressive blur fade above the action bar */}
-        <div aria-hidden className="pointer-events-none h-8 bg-gradient-to-b from-transparent to-background/85" />
+        <div aria-hidden className="pointer-events-none h-8 bg-linear-to-b from-transparent to-background/85" />
         <div className="pb-3 bg-background/85 backdrop-blur-md">
         {phase === "idle" && (
           <Button

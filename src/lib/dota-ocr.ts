@@ -112,28 +112,68 @@ Rules:
 - "rosterId" MUST be one of the listed ids above or null. Do not invent new ids.
 - Do NOT extract hero, K/D/A, net worth, GPM, MMR, or any other stats.
 
-Titles — ONLY these three keys exist. Ignore everything else in the awards panel:
-    mvp  -> MVP, the BEST player overall. Awarded on the WINNING side, usually
-            gold/yellow text. Written as MVP.
-    svp  -> SVP, the best player on the LOSING team (the most valuable loser).
-            Awarded on the LOSING side, usually silver/yellow text. Written as SVP.
-    gg   -> GG, the WORST player of the match. Awarded on the LOSING side in
-            plain white text. Its icon is a Chinese character that LOOKS LIKE
-            the glyph "田" (a square split into four smaller squares). That
-            icon is easy to confuse with the AFK/挂机 badge — if the player
-            was clearly present and playing, prefer "gg" over any AFK guess.
-            Chinese: 田 / 白板 / 白板先生 / GG.
+Titles — ONLY these three keys exist. Ignore everything else in the awards panel.
+Titles live in the "Title for the Round" column (中文: 本场称号). A title
+belongs to the player whose NAME ROW it is HORIZONTALLY ALIGNED WITH — bind by
+row, not by proximity to neighboring icons or medals.
 
-Instructions for the titles panel:
+All three titles are rendered the SAME WAY visually: a small rounded-square
+pill/badge with a GOLD or YELLOW frame/border sitting in the "Title for the
+Round" column. They differ ONLY in what's INSIDE the pill:
+
+    mvp  -> MVP, the BEST player overall. Awarded on the WINNING side ONLY.
+            Pill contents: the 3 LATIN LETTERS "MVP" (gold/yellow, readable).
+            If you cannot read the letters M-V-P inside the pill, it's not MVP.
+    svp  -> SVP, the best player on the LOSING team (the most valuable loser).
+            Awarded on the LOSING side ONLY.
+            Pill contents: the 3 LATIN LETTERS "SVP" (silver or yellow).
+            If you cannot read the letters S-V-P inside the pill, it's not SVP.
+            Decorative flair (flowers / medals / emoji / confetti) may sit
+            NEXT TO an SVP pill in the same cell — these are reward items,
+            NEVER titles, NEVER GG.
+    gg   -> GG, the WORST player on the losing team. Awarded on the LOSING
+            side ONLY.
+
+            GG PILL CONTENTS — GG is ALWAYS this ONE specific character:
+
+                佃   (diàn — "tenant farmer")
+
+            rendered in WHITE, inside the white pill, on a losing-side
+            row. That is the ONE and ONLY glyph that represents GG. Shape
+            cues for recognising 佃:
+              • Narrow "person" radical (亻) on the LEFT (two simple strokes)
+              • A small square / grid shape (田 — four sub-squares) on the
+                RIGHT, taking up the majority of the glyph width
+              • Overall: a vertical stroke + a mini window-pane
+
+MANDATORY SCAN PROCEDURE for the titles panel — do this BEFORE emitting JSON:
+  1. Identify the losing side (opposite of winningSide from the banner).
+  2. Walk through EVERY row of the losing team, top to bottom. For each row
+     inspect ONLY the "Title for the Round" cell for that row.
+  3. For each gold/yellow-framed pill you find, inspect its CONTENTS:
+       a. Latin letters "M-V-P" → mvp. (Should only occur on the winning
+          side; if somehow seen on the losing side, treat as OCR error.)
+       b. Latin letters "S-V-P" → svp.
+       c. The specific white Chinese character 佃 (person radical 亻 on the
+          left + a 田 "window-pane" square on the right), OR the Latin
+          letters "GG" in white → gg.
+       e. Empty / no pill → no title on that row.
+  4. Walk every row of the winning team the same way, but only accept MVP
+     matches.
+  5. Before emitting: a match ALWAYS HAS ONLY one GG and SVP on losing side
+     and one MVP on the winning side.
+
+Hard constraints:
+- Bind title → player by ROW ALIGNMENT only. Do NOT shuffle titles to a
+  "better" candidate based on K/D or other stats.
+- MVP, SVP, and GG ALWAYS appear on DIFFERENT rows (different players).
+  NEVER stack two of these on the same row/player.
 - Do NOT use MVP/SVP/GG title placement to decide "winningSide".
 - Emit AT MOST ONE "mvp" (best player, winning side).
 - Emit AT MOST ONE "svp" (best loser, losing side).
 - Emit AT MOST ONE "gg" (worst player, losing side).
-- These three titles are MUTUALLY EXCLUSIVE per player: a single player can
-  hold at most ONE of {mvp, svp, gg}. Never assign two of these to the same
-  displayName.
-- "displayName" must exactly match the player's name from the "players" array.
-- If a title is not clearly visible, omit it (return fewer entries or []).
+- "displayName" must exactly match the player's name from the "players" array
+  (the same row the title is aligned with).
 - Do NOT emit any other title keys. They are not tracked.
 
 Output ONLY the JSON object.`;
@@ -171,31 +211,69 @@ function toSide(v: unknown): Side | null {
   return null;
 }
 
+const MAX_DISPLAY_NAME = 64;
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARS = /[\u0000-\u001f\u007f]/g;
+function sanitizeDisplayName(v: unknown, fallback = "Unknown"): string {
+  if (typeof v !== "string") return fallback;
+  const cleaned = v.replace(CONTROL_CHARS, "").trim();
+  if (cleaned.length === 0) return fallback;
+  return cleaned.slice(0, MAX_DISPLAY_NAME);
+}
+
+export type ValidationResult =
+  | { ok: true; match: ExtractedMatch }
+  | { ok: false; reason: string };
+
 /**
- * Parse + sanitize the model's JSON. Returns null if the shape is unrecoverable.
- * Coerces any `rosterId` not in `rosterIds` to null — never trust the model to
- * invent ids.
+ * Parse + sanitize the model's JSON. Returns a reason string when the shape
+ * is unrecoverable. Coerces any `rosterId` not in `rosterIds` to null — never
+ * trust the model to invent ids.
  */
 export function validateExtraction(
   raw: unknown,
   rosterIds: Set<string>
 ): ExtractedMatch | null {
-  if (!raw || typeof raw !== "object") return null;
+  const result = validateExtractionDetailed(raw, rosterIds);
+  return result.ok ? result.match : null;
+}
+
+export function validateExtractionDetailed(
+  raw: unknown,
+  rosterIds: Set<string>
+): ValidationResult {
+  if (!raw || typeof raw !== "object") {
+    return { ok: false, reason: "raw is not an object" };
+  }
   const r = raw as Record<string, unknown>;
 
   const winningSide = toSide(r.winningSide);
-  if (!winningSide) return null;
+  if (!winningSide) {
+    return {
+      ok: false,
+      reason: `winningSide missing or unrecognised (got: ${JSON.stringify(r.winningSide)})`,
+    };
+  }
 
   const playersRaw = Array.isArray(r.players) ? r.players : null;
-  if (!playersRaw) return null;
+  if (!playersRaw) {
+    return { ok: false, reason: "players is not an array" };
+  }
 
   const players: ExtractedPlayer[] = [];
+  const skippedPlayers: string[] = [];
   for (let i = 0; i < playersRaw.length; i++) {
     const p = playersRaw[i];
-    if (!p || typeof p !== "object") continue;
+    if (!p || typeof p !== "object") {
+      skippedPlayers.push(`idx=${i} not-object`);
+      continue;
+    }
     const pr = p as Record<string, unknown>;
     const side = toSide(pr.side);
-    if (!side) continue;
+    if (!side) {
+      skippedPlayers.push(`idx=${i} bad-side=${JSON.stringify(pr.side)}`);
+      continue;
+    }
     const rosterIdRaw = pr.rosterId;
     const rosterId =
       typeof rosterIdRaw === "string" && rosterIds.has(rosterIdRaw)
@@ -204,14 +282,19 @@ export function validateExtraction(
     const slot = toNumber(pr.slot) || i + 1;
     players.push({
       slot,
-      displayName: typeof pr.displayName === "string" ? pr.displayName : "Unknown",
+      displayName: sanitizeDisplayName(pr.displayName),
       rosterId,
       side,
       won: side === winningSide,
     });
   }
 
-  if (players.length === 0) return null;
+  if (players.length === 0) {
+    return {
+      ok: false,
+      reason: `no valid players (raw length=${playersRaw.length}, skipped=[${skippedPlayers.join("; ")}])`,
+    };
+  }
 
   const titlesRaw = Array.isArray(r.titles) ? r.titles : [];
   const titles: ExtractedTitle[] = [];
@@ -223,10 +306,7 @@ export function validateExtraction(
     const key = typeof t.key === "string" ? t.key.toLowerCase() : null;
     if (!key || !(key in TITLE_LABELS)) continue;
     if (usedKeys.has(key)) continue;
-    const displayName =
-      typeof t.displayName === "string" && t.displayName.length > 0
-        ? t.displayName
-        : "Unknown";
+    const displayName = sanitizeDisplayName(t.displayName);
     const playerKey = displayName.toLowerCase();
     if (claimedPlayers.has(playerKey)) continue;
     usedKeys.add(key);
@@ -244,14 +324,19 @@ export function validateExtraction(
     });
   }
 
+  const rawExtId =
+    typeof r.externalMatchId === "string"
+      ? r.externalMatchId.replace(CONTROL_CHARS, "").trim().slice(0, 64)
+      : "";
+
   return {
-    externalMatchId:
-      typeof r.externalMatchId === "string" && r.externalMatchId.length > 0
-        ? r.externalMatchId
-        : null,
-    durationSeconds: toNullableNumber(r.durationSeconds),
-    winningSide,
-    players,
-    titles,
+    ok: true,
+    match: {
+      externalMatchId: rawExtId.length > 0 ? rawExtId : null,
+      durationSeconds: toNullableNumber(r.durationSeconds),
+      winningSide,
+      players,
+      titles,
+    },
   };
 }

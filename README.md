@@ -51,7 +51,7 @@ On `/log`, the **Upload match screenshot** button accepts a Dota 2 end-of-match 
 
 The user reviews the extracted rows, deselects any they don't want logged, and confirms. On submit the app writes one `matches` row, one `matchPlayers` row per selected player (linked via InstantDB's forward link), **plus** compat `entries` rows so the existing leaderboard, stats, streaks, and charts keep working unchanged.
 
-Images are discarded immediately after OCR — nothing is persisted except the structured stats.
+Images are discarded on this server after the OCR call returns — nothing is persisted except the structured stats. The image IS sent to OpenRouter for processing; whatever retention or logging policy OpenRouter (and the underlying model provider) applies is out of this app's control.
 
 **Required env vars:**
 

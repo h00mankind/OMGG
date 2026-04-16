@@ -28,6 +28,14 @@ const rules = {
       delete: "false",
     },
   },
+  matchTitles: {
+    allow: {
+      view: "true",
+      create: "true",
+      update: "false",
+      delete: "false",
+    },
+  },
 } satisfies InstantRules;
 
 export default rules;
