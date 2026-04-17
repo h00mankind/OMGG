@@ -6,7 +6,6 @@ import { CURRENT_TITLE, ROSTER } from "@/lib/config";
 import {
   ENTRY_KIND_GG,
   entryKindShortLabel,
-  normalizeEntryKind,
 } from "@/lib/entry-kinds";
 import {
   aggregateByPlayer,
@@ -128,6 +127,7 @@ export default function Home() {
         order: { playedAt: "desc" },
       },
       players: {},
+      titles: {},
     },
   });
 
@@ -173,7 +173,12 @@ export default function Home() {
     return "";
   };
 
-  const recent = entries.slice(0, 10);
+  const recentMatches = matches.slice(0, 8);
+  const titleOrder: Record<string, number> = { gg: 0, mvp: 1, svp: 2 };
+  const titleLabels: Record<string, string> = { gg: "GG", mvp: "MVP", svp: "SVP" };
+
+  const displayNameFor = (playerId: string | null | undefined, fallback: string) =>
+    (playerId && rosterById.get(playerId)?.name) || fallback;
   const totalMetric = leaderboard.reduce(
     (sum, p) => sum + playerMetricCount(p, rankMetric),
     0
@@ -426,27 +431,106 @@ export default function Home() {
               </CardContent>
             </Card>
 
-            {recent.length > 0 && (
+            {recentMatches.length > 0 && (
               <Card>
                 <CardHeader>
                   <CardTitle>Recent activity</CardTitle>
+                  <CardDescription>
+                    {(() => {
+                      const count = recentMatches.length;
+                      const total = matches.length;
+                      const oldest = recentMatches[count - 1];
+                      const oldestAt = oldest?.playedAt ?? oldest?.createdAt;
+                      const span = oldestAt ? ` · since ${timeAgo(oldestAt)}` : "";
+                      const more = total > count ? ` of ${total}` : "";
+                      return `Last ${count} match${count === 1 ? "" : "es"}${more}${span}`;
+                    })()}
+                  </CardDescription>
                 </CardHeader>
-                <CardContent>
-                  <ul className="space-y-1 text-sm text-muted-foreground">
-                    {recent.map((e) => {
-                      const name = rosterById.get(e.playerId)?.name ?? e.playerId;
-                      const kind = normalizeEntryKind(e.kind);
-                      const label = entryKindShortLabel(kind);
-                      return (
-                        <li key={e.id}>
-                          <span className="text-foreground font-medium">
-                            {name}
-                          </span>{" "}
-                          +1 {label} · {timeAgo(e.createdAt)}
-                        </li>
+                <CardContent className="space-y-3">
+                  {recentMatches.map((m) => {
+                    const playedAt = m.playedAt ?? m.createdAt;
+                    const players = (m.players ?? [])
+                      .slice()
+                      .sort((a, b) => Number(b.won) - Number(a.won));
+                    const winners = players.filter((p) => p.won);
+                    const losers = players.filter((p) => !p.won);
+                    const titles = (m.titles ?? [])
+                      .slice()
+                      .sort(
+                        (a, b) =>
+                          (titleOrder[a.titleKey] ?? 9) -
+                          (titleOrder[b.titleKey] ?? 9)
                       );
-                    })}
-                  </ul>
+                    const winningSideLabel =
+                      m.winningSide === "radiant"
+                        ? "Radiant won"
+                        : m.winningSide === "dire"
+                          ? "Dire won"
+                          : "Match";
+
+                    return (
+                      <Card size="sm" key={m.id}>
+                        <CardHeader>
+                          <CardTitle className="flex items-center gap-2">
+                            <span className="inline-flex items-center bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-500">
+                              {winningSideLabel}
+                            </span>
+                          </CardTitle>
+                          <CardAction>
+                            <span className="text-[11px] text-muted-foreground">
+                              {timeAgo(playedAt)}
+                            </span>
+                          </CardAction>
+                        </CardHeader>
+                        <CardContent className="space-y-2.5">
+                          {titles.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {titles.map((t) => (
+                                <span
+                                  key={t.id}
+                                  className="inline-flex items-center gap-1.5 border border-border bg-muted/20 px-2 py-0.5 text-[11px]"
+                                >
+                                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                                    {titleLabels[t.titleKey] ?? t.titleKey}
+                                  </span>
+                                  <span className="font-medium text-foreground">
+                                    {displayNameFor(t.playerId, t.displayName)}
+                                  </span>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                          <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
+                            {winners.length > 0 && (
+                              <>
+                                <span className="font-semibold uppercase tracking-wide text-emerald-500">
+                                  Won
+                                </span>
+                                <span className="text-foreground">
+                                  {winners
+                                    .map((p) => displayNameFor(p.playerId, p.displayName))
+                                    .join(", ")}
+                                </span>
+                              </>
+                            )}
+                            {losers.length > 0 && (
+                              <>
+                                <span className="font-semibold uppercase tracking-wide text-rose-500">
+                                  Lost
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {losers
+                                    .map((p) => displayNameFor(p.playerId, p.displayName))
+                                    .join(", ")}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </CardContent>
               </Card>
             )}

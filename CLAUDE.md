@@ -62,3 +62,7 @@ npx shadcn@latest add <component>
 Charts use `recharts` via the `ChartContainer`/`ChartConfig` wrapper in `src/components/ui/chart.tsx`. Series colors are set via `var(--color-<dataKey>)` (resolved by `ChartContainer` from the config object) — not raw CSS vars like `--chart-1` directly in JSX.
 
 Tailwind CSS v4 + `tw-animate-css`. Dark mode forced via `className="dark"` on `<html>`. Icons from `lucide-react` and `@phosphor-icons/react`.
+
+When I say "watch mode", call agentation_watch_annotations in a loop.
+For each annotation: acknowledge it, make the fix, then resolve it with a summary.
+Continue watching until I say stop or timeout is reached.
