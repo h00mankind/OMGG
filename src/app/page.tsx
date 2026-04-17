@@ -492,19 +492,29 @@ export default function Home() {
                         <CardContent className="space-y-2.5">
                           {titles.length > 0 && (
                             <div className="flex flex-wrap gap-1.5">
-                              {titles.map((t) => (
-                                <span
-                                  key={t.id}
-                                  className="inline-flex items-center gap-1.5 border border-border bg-muted/20 px-2 py-0.5 text-[11px]"
-                                >
-                                  <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                                    {titleLabels[t.titleKey] ?? t.titleKey}
+                              {titles.map((t) => {
+                                const titleColor =
+                                  t.titleKey === "mvp"
+                                    ? "text-orange-400"
+                                    : t.titleKey === "svp"
+                                      ? "text-yellow-300"
+                                      : "text-white";
+                                return (
+                                  <span
+                                    key={t.id}
+                                    className="inline-flex items-center gap-1.5 border border-border bg-muted/20 px-2 py-0.5 text-[11px]"
+                                  >
+                                    <span
+                                      className={`text-[10px] font-semibold uppercase tracking-wide ${titleColor}`}
+                                    >
+                                      {titleLabels[t.titleKey] ?? t.titleKey}
+                                    </span>
+                                    <span className="font-medium text-foreground">
+                                      {displayNameFor(t.playerId, t.displayName)}
+                                    </span>
                                   </span>
-                                  <span className="font-medium text-foreground">
-                                    {displayNameFor(t.playerId, t.displayName)}
-                                  </span>
-                                </span>
-                              ))}
+                                );
+                              })}
                             </div>
                           )}
                           <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
