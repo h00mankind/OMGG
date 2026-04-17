@@ -473,7 +473,13 @@ export default function Home() {
                       <Card size="sm" key={m.id}>
                         <CardHeader>
                           <CardTitle className="flex items-center gap-2">
-                            <span className="inline-flex items-center bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-500">
+                            <span
+                              className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                m.winningSide === "dire"
+                                  ? "bg-red-500/15 text-red-500"
+                                  : "bg-emerald-500/15 text-emerald-500"
+                              }`}
+                            >
                               {winningSideLabel}
                             </span>
                           </CardTitle>
