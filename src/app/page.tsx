@@ -6,6 +6,7 @@ import { CURRENT_TITLE, ROSTER } from "@/lib/config";
 import {
   ENTRY_KIND_GG,
   entryKindShortLabel,
+  type EntryKind,
 } from "@/lib/entry-kinds";
 import {
   aggregateByPlayer,
@@ -175,7 +176,7 @@ export default function Home() {
 
   const recentMatches = matches.slice(0, 8);
   const recentEntriesByPlayer = (() => {
-    const m = new Map<string, { kind: string; createdAt: Date }[]>();
+    const m = new Map<string, { kind: EntryKind; createdAt: Date }[]>();
     for (const e of entries) {
       const kind = e.kind ?? "gg";
       if (
