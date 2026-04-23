@@ -505,6 +505,7 @@ export default function Home() {
 
                     const wonCount = wonRoster.length;
                     const lossCount = lostRoster.length;
+                    const isMixed = wonCount > 0 && lossCount > 0;
                     const outcome =
                       wonCount === 0 && lossCount === 0
                         ? "Match"
@@ -552,14 +553,25 @@ export default function Home() {
                       <Card size="sm" key={m.id}>
                         <CardHeader>
                           <CardTitle className="flex items-center gap-2">
-                            <span
-                              className={cn(
-                                "inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                                outcomeClass
-                              )}
-                            >
-                              {outcome}
-                            </span>
+                            {isMixed ? (
+                              <>
+                                <span className="inline-flex items-center bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-500">
+                                  WIN
+                                </span>
+                                <span className="inline-flex items-center bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-500">
+                                  LOSS
+                                </span>
+                              </>
+                            ) : (
+                              <span
+                                className={cn(
+                                  "inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                                  outcomeClass
+                                )}
+                              >
+                                {outcome}
+                              </span>
+                            )}
                           </CardTitle>
                           <CardAction>
                             <span className="text-[11px] text-muted-foreground">
@@ -598,7 +610,26 @@ export default function Home() {
                               })}
                             </div>
                           )}
-                          {playersForCard.length > 0 && (
+                          {isMixed ? (
+                            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
+                              <span className="font-semibold uppercase tracking-wide text-emerald-500">
+                                WIN
+                              </span>
+                              <span className="text-foreground">
+                                {wonRoster
+                                  .map((p) => displayNameFor(p.playerId, p.displayName))
+                                  .join(", ")}
+                              </span>
+                              <span className="font-semibold uppercase tracking-wide text-rose-500">
+                                LOSS
+                              </span>
+                              <span className="text-foreground">
+                                {lostRoster
+                                  .map((p) => displayNameFor(p.playerId, p.displayName))
+                                  .join(", ")}
+                              </span>
+                            </div>
+                          ) : playersForCard.length > 0 && (
                             <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
                               <span className="font-semibold uppercase tracking-wide text-muted-foreground">
                                 Players

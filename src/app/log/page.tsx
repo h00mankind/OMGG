@@ -132,6 +132,7 @@ type WlStatus = "off" | "win" | "loss";
 type TitleKey = "gg" | "mvp" | "svp";
 
 const TITLE_ORDER: TitleKey[] = ["mvp", "svp", "gg"];
+const ROSTER_BY_ID = new Map(ROSTER.map((p) => [p.id, p]));
 const emptyTitles = (): Record<TitleKey, string | null> => ({
   mvp: null,
   svp: null,
@@ -140,7 +141,8 @@ const emptyTitles = (): Record<TitleKey, string | null> => ({
 const emptyStatuses = (): Record<string, WlStatus> =>
   Object.fromEntries(ROSTER.map((p) => [p.id, "off" as WlStatus]));
 
-type Phase = "idle" | "uploading" | "review" | "success";
+type Phase = "idle" | "uploading" | "review" | "confirm" | "success";
+type ConfirmOrigin = "manual" | "scan";
 
 /* ------------------------------------------------------------------ */
 /*  Main page                                                          */
@@ -148,6 +150,7 @@ type Phase = "idle" | "uploading" | "review" | "success";
 
 export default function LogPage() {
   const [phase, setPhase] = useState<Phase>("idle");
+  const [confirmOrigin, setConfirmOrigin] = useState<ConfirmOrigin | null>(null);
   const [error, setError] = useState<string | null>(null);
   const { remaining: aiRemaining, consume: consumeAi } = useAiQuota();
 
@@ -194,6 +197,7 @@ export default function LogPage() {
 
   const resetAll = useCallback(() => {
     setPhase("idle");
+    setConfirmOrigin(null);
     setError(null);
     setStatuses(emptyStatuses());
     setTitles(emptyTitles());
@@ -296,7 +300,7 @@ export default function LogPage() {
     });
   };
 
-  const addTitleToPlayer = (slot: number, key: string) => {
+  const addTitleToPlayer = (slot: number, key: TitleKey) => {
     setScan((prev) => {
       if (!prev) return prev;
       const player = prev.players.find((p) => p.slot === slot);
@@ -353,6 +357,7 @@ export default function LogPage() {
   const handleLogScan = () => {
     if (!scan || scanSelectedCount === 0) return;
     logMatchFromScan(scan, scanSelection);
+    setConfirmOrigin(null);
     setPhase("success");
     setTimeout(resetAll, 900);
   };
@@ -364,12 +369,67 @@ export default function LogPage() {
       lostPlayerIds: manualLostIds,
       titles,
     });
+    setConfirmOrigin(null);
     setPhase("success");
     setTimeout(resetAll, 900);
   };
 
+  const goToConfirmManual = () => {
+    if (!canLogManual) return;
+    setError(null);
+    setConfirmOrigin("manual");
+    setPhase("confirm");
+  };
+
+  const goToConfirmScan = () => {
+    if (!scan || scanSelectedCount === 0) return;
+    setError(null);
+    setConfirmOrigin("scan");
+    setPhase("confirm");
+  };
+
+  const backFromConfirm = () => {
+    const previousPhase = confirmOrigin === "scan" && scan ? "review" : "idle";
+    setConfirmOrigin(null);
+    setPhase(previousPhase);
+  };
+
+  const handleConfirmLog = () => {
+    if (confirmOrigin === "scan") {
+      handleLogScan();
+      return;
+    }
+    if (confirmOrigin === "manual") {
+      handleLogManual();
+    }
+  };
+
   const showManualForm = phase === "idle";
   const showScan = phase === "review" && scan;
+  const confirmData: ConfirmData | null =
+    phase !== "confirm"
+      ? null
+      : confirmOrigin === "manual"
+        ? {
+            mode: "manual",
+            wonPlayerIds: manualWonIds,
+            lostPlayerIds: manualLostIds,
+            titles,
+          }
+        : confirmOrigin === "scan" && scan
+          ? {
+              mode: "scan",
+              scan,
+              selection: scanSelection,
+              imageUrl: scanImageUrl,
+            }
+          : null;
+  const canConfirmLog =
+    confirmOrigin === "manual"
+      ? canLogManual
+      : confirmOrigin === "scan"
+        ? !!scan && scanSelectedCount > 0
+        : false;
 
   return (
     <div className="mx-auto max-w-2xl px-8 pt-4 pb-32 space-y-5">
@@ -453,6 +513,8 @@ export default function LogPage() {
         />
       )}
 
+      {confirmData && <ConfirmSummary data={confirmData} />}
+
       {/* Sticky action bar */}
       <div className="sticky bottom-28 -mx-8 px-8 z-30 will-change-transform">
         {/* Progressive blur fade above the action bar */}
@@ -463,7 +525,7 @@ export default function LogPage() {
             size="lg"
             className="w-full"
             disabled={!canLogManual}
-            onClick={handleLogManual}
+            onClick={goToConfirmManual}
           >
             {canLogManual
               ? `Log match · ${manualWonIds.length}W / ${manualLostIds.length}L`
@@ -478,9 +540,23 @@ export default function LogPage() {
             <Button
               className="w-full sm:flex-1"
               disabled={scanSelectedCount === 0}
-              onClick={handleLogScan}
+              onClick={goToConfirmScan}
             >
               Log match ({scanSelectedCount} player{scanSelectedCount === 1 ? "" : "s"})
+            </Button>
+          </div>
+        )}
+        {phase === "confirm" && (
+          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-between">
+            <Button variant="outline" className="w-full sm:w-auto" onClick={backFromConfirm}>
+              Back
+            </Button>
+            <Button
+              className="w-full sm:flex-1"
+              disabled={!canConfirmLog}
+              onClick={handleConfirmLog}
+            >
+              Confirm & log
             </Button>
           </div>
         )}
@@ -509,6 +585,174 @@ const MANUAL_TITLE_LABELS: Record<TitleKey, string> = {
   svp: "SVP",
   gg: "GG",
 };
+
+type ConfirmData =
+  | {
+      mode: "manual";
+      wonPlayerIds: string[];
+      lostPlayerIds: string[];
+      titles: Record<TitleKey, string | null>;
+    }
+  | {
+      mode: "scan";
+      scan: ExtractedMatch;
+      selection: Record<number, boolean>;
+      imageUrl: string | null;
+    };
+
+type ConfirmTitleItem = {
+  key: string;
+  label: string;
+  playerName: string;
+};
+
+function rosterNameFor(playerId: string, fallback = "Unknown"): string {
+  return ROSTER_BY_ID.get(playerId)?.name ?? fallback;
+}
+
+function selectedScanNames(
+  data: Extract<ConfirmData, { mode: "scan" }>,
+  won: boolean
+): string[] {
+  return data.scan.players.flatMap((p) => {
+    if (!p.rosterId || !data.selection[p.slot] || p.won !== won) return [];
+    return [rosterNameFor(p.rosterId, p.displayName)];
+  });
+}
+
+function ConfirmRosterSection({
+  title,
+  names,
+  tone,
+}: {
+  title: string;
+  names: string[];
+  tone: "win" | "loss";
+}) {
+  const toneClass =
+    tone === "win"
+      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-300"
+      : "border-red-500/30 bg-red-500/10 text-red-300";
+
+  return (
+    <section className="space-y-2">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </h3>
+      {names.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5">
+          {names.map((name, index) => (
+            <span
+              key={`${name}:${index}`}
+              className={cn("rounded-md border px-2 py-1 text-xs font-medium", toneClass)}
+            >
+              {name}
+            </span>
+          ))}
+        </div>
+      ) : (
+        <p className="text-xs text-muted-foreground">No players selected.</p>
+      )}
+    </section>
+  );
+}
+
+function ConfirmSummary({ data }: { data: ConfirmData }) {
+  const winners =
+    data.mode === "manual"
+      ? data.wonPlayerIds.map((id) => rosterNameFor(id))
+      : selectedScanNames(data, true);
+  const losers =
+    data.mode === "manual"
+      ? data.lostPlayerIds.map((id) => rosterNameFor(id))
+      : selectedScanNames(data, false);
+  const titleItems: ConfirmTitleItem[] =
+    data.mode === "manual"
+      ? TITLE_ORDER.flatMap((key) => {
+          const playerId = data.titles[key];
+          if (!playerId) return [];
+          return [
+            {
+              key,
+              label: MANUAL_TITLE_LABELS[key],
+              playerName: rosterNameFor(playerId),
+            },
+          ];
+        })
+      : data.scan.titles.map((title) => ({
+          key: title.key,
+          label: TITLE_LABELS[title.key] ?? title.label,
+          playerName: title.rosterId
+            ? rosterNameFor(title.rosterId, title.displayName)
+            : title.displayName,
+        }));
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Review match</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Confirm to log. This can&apos;t be edited or deleted after.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {data.mode === "scan" && (
+          <section className="space-y-3 rounded-lg border border-border bg-muted/20 p-3">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <div>
+                <div className="font-semibold uppercase tracking-wide text-muted-foreground">
+                  Result
+                </div>
+                <div className="mt-0.5 text-foreground">
+                  {data.scan.winningSide === "radiant" ? "Radiant" : "Dire"} won
+                </div>
+              </div>
+              <div>
+                <div className="font-semibold uppercase tracking-wide text-muted-foreground">
+                  Duration
+                </div>
+                <div className="mt-0.5 text-foreground">
+                  {formatDuration(data.scan.durationSeconds)}
+                </div>
+              </div>
+            </div>
+            {data.imageUrl && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={data.imageUrl}
+                alt="Screenshot preview"
+                className="max-h-44 w-full rounded-md border border-border object-cover"
+              />
+            )}
+          </section>
+        )}
+
+        <ConfirmRosterSection title="Winners" names={winners} tone="win" />
+        <ConfirmRosterSection title="Losers" names={losers} tone="loss" />
+
+        <section className="space-y-2">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Titles
+          </h3>
+          {titleItems.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {titleItems.map((item) => (
+                <Badge
+                  key={`${item.key}:${item.playerName}`}
+                  className={cn("border text-[11px]", titleBadgeClass(item.key))}
+                >
+                  {item.label} — {item.playerName}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No titles assigned.</p>
+          )}
+        </section>
+      </CardContent>
+    </Card>
+  );
+}
 
 function AddManualTitleSelect({
   options,
@@ -685,12 +929,20 @@ function titleBadgeClass(key: string): string {
   return "bg-zinc-100/10 text-zinc-200 border-zinc-400/30";
 }
 
-function AddTitleSelect({ onAdd }: { onAdd: (key: string) => void }) {
+function AddTitleSelect({
+  options,
+  onAdd,
+}: {
+  options: TitleKey[];
+  onAdd: (key: TitleKey) => void;
+}) {
+  if (options.length === 0) return null;
+
   return (
     <select
       value=""
       onChange={(e) => {
-        const v = e.target.value;
+        const v = e.target.value as TitleKey;
         if (v) onAdd(v);
         e.currentTarget.value = "";
       }}
@@ -701,9 +953,9 @@ function AddTitleSelect({ onAdd }: { onAdd: (key: string) => void }) {
       )}
     >
       <option value="">+ title</option>
-      {Object.entries(TITLE_LABELS).map(([key, label]) => (
-        <option key={key} value={key}>
-          {label}
+      {options.map((k) => (
+        <option key={k} value={k}>
+          {TITLE_LABELS[k]}
         </option>
       ))}
     </select>
@@ -759,7 +1011,7 @@ function ScanReview({
   toggle: (slot: number) => void;
   onSetWinningSide: (winningSide: "radiant" | "dire") => void;
   onReassignPlayer: (slot: number, rosterId: string | null) => void;
-  onAddTitle: (slot: number, key: string) => void;
+  onAddTitle: (slot: number, key: TitleKey) => void;
   onRemoveTitle: (index: number) => void;
   onBack: () => void;
 }) {
@@ -794,6 +1046,16 @@ function ScanReview({
     });
     return out;
   }, [scan]);
+
+  const takenTitleKeys = useMemo(() => {
+    const set = new Set<TitleKey>();
+    scan.titles.forEach((t) => {
+      if (TITLE_ORDER.includes(t.key as TitleKey)) {
+        set.add(t.key as TitleKey);
+      }
+    });
+    return set;
+  }, [scan.titles]);
 
   const winLabel = scan.winningSide === "radiant" ? "Radiant Wins" : "Dire Wins";
 
@@ -856,6 +1118,7 @@ function ScanReview({
           onAddTitle={onAddTitle}
           onRemoveTitle={onRemoveTitle}
           titlesByName={titlesByName}
+          takenTitleKeys={takenTitleKeys}
           won={scan.winningSide === "radiant"}
         />
         <ScanSideList
@@ -867,6 +1130,7 @@ function ScanReview({
           onAddTitle={onAddTitle}
           onRemoveTitle={onRemoveTitle}
           titlesByName={titlesByName}
+          takenTitleKeys={takenTitleKeys}
           won={scan.winningSide === "dire"}
         />
         {unmatchedTitles.length > 0 && (
@@ -909,6 +1173,7 @@ function ScanSideList({
   onAddTitle,
   onRemoveTitle,
   titlesByName,
+  takenTitleKeys,
   won,
 }: {
   label: string;
@@ -916,9 +1181,10 @@ function ScanSideList({
   selection: Record<number, boolean>;
   toggle: (slot: number) => void;
   onReassign: (slot: number, rosterId: string | null) => void;
-  onAddTitle: (slot: number, key: string) => void;
+  onAddTitle: (slot: number, key: TitleKey) => void;
   onRemoveTitle: (index: number) => void;
   titlesByName: Map<string, IndexedTitle[]>;
+  takenTitleKeys: Set<TitleKey>;
   won: boolean;
 }) {
   return (
@@ -936,6 +1202,11 @@ function ScanSideList({
           const isRoster = p.rosterId !== null;
           const selected = isRoster && !!selection[p.slot];
           const playerTitles = titlesByName.get(normalizeName(p.displayName)) ?? [];
+          const availableTitles = TITLE_ORDER.filter((key) => {
+            if (takenTitleKeys.has(key)) return false;
+            if (key === "mvp") return p.won;
+            return !p.won;
+          });
           return (
             <div
               key={p.slot}
@@ -991,9 +1262,12 @@ function ScanSideList({
                       </button>
                     </Badge>
                   ))}
-                  <AddTitleSelect
-                    onAdd={(key) => onAddTitle(p.slot, key)}
-                  />
+                  {availableTitles.length > 0 && (
+                    <AddTitleSelect
+                      options={availableTitles}
+                      onAdd={(key) => onAddTitle(p.slot, key)}
+                    />
+                  )}
                 </div>
               </div>
             </div>
