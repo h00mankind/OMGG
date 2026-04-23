@@ -174,8 +174,25 @@ export default function Home() {
   };
 
   const recentMatches = matches.slice(0, 8);
-  const titleOrder: Record<string, number> = { gg: 0, mvp: 1, svp: 2 };
-  const titleLabels: Record<string, string> = { gg: "GG", mvp: "MVP", svp: "SVP" };
+  const recentEntriesByPlayer = (() => {
+    const m = new Map<string, { kind: string; createdAt: Date }[]>();
+    for (const e of entries) {
+      const kind = e.kind ?? "gg";
+      if (
+        kind !== "gg" &&
+        kind !== "mvp" &&
+        kind !== "svp" &&
+        kind !== "win" &&
+        kind !== "loss"
+      ) {
+        continue;
+      }
+      const list = m.get(e.playerId) ?? [];
+      list.push({ kind, createdAt: e.createdAt });
+      m.set(e.playerId, list);
+    }
+    return m;
+  })();
 
   const displayNameFor = (playerId: string | null | undefined, fallback: string) =>
     (playerId && rosterById.get(playerId)?.name) || fallback;
@@ -450,37 +467,97 @@ export default function Home() {
                 <CardContent className="space-y-3">
                   {recentMatches.map((m) => {
                     const playedAt = m.playedAt ?? m.createdAt;
-                    const players = (m.players ?? [])
-                      .slice()
-                      .sort((a, b) => Number(b.won) - Number(a.won));
-                    const winners = players.filter((p) => p.won);
-                    const losers = players.filter((p) => !p.won);
-                    const titles = (m.titles ?? [])
-                      .slice()
-                      .sort(
-                        (a, b) =>
-                          (titleOrder[a.titleKey] ?? 9) -
-                          (titleOrder[b.titleKey] ?? 9)
-                      );
-                    const winningSideLabel =
-                      m.winningSide === "radiant"
-                        ? "Radiant won"
-                        : m.winningSide === "dire"
-                          ? "Dire won"
-                          : "Match";
+                    const rosterPlayers = (m.players ?? []).filter(
+                      (p) => !!p.playerId && rosterById.has(p.playerId)
+                    );
+                    const entryWindowStart = playedAt.getTime();
+                    const entryWindowEnd = entryWindowStart + 5000;
+
+                    const winLossByPlayer = new Map<
+                      string,
+                      { win: boolean; loss: boolean }
+                    >();
+                    for (const p of rosterPlayers) {
+                      const pid = p.playerId!;
+                      const list = recentEntriesByPlayer.get(pid) ?? [];
+                      const win = list.some((t) => {
+                        if (t.kind !== "win") return false;
+                        const ts = t.createdAt.getTime();
+                        return ts >= entryWindowStart && ts <= entryWindowEnd;
+                      });
+                      const loss = list.some((t) => {
+                        if (t.kind !== "loss") return false;
+                        const ts = t.createdAt.getTime();
+                        return ts >= entryWindowStart && ts <= entryWindowEnd;
+                      });
+                      winLossByPlayer.set(pid, { win, loss });
+                    }
+
+                    const wonRoster = rosterPlayers.filter((p) => {
+                      const pid = p.playerId!;
+                      return winLossByPlayer.get(pid)?.win;
+                    });
+                    const lostRoster = rosterPlayers.filter((p) => {
+                      const pid = p.playerId!;
+                      return winLossByPlayer.get(pid)?.loss;
+                    });
+
+                    const wonCount = wonRoster.length;
+                    const lossCount = lostRoster.length;
+                    const outcome =
+                      wonCount === 0 && lossCount === 0
+                        ? "Match"
+                        : wonCount >= lossCount
+                          ? "Win"
+                          : "Loss";
+                    const outcomeClass =
+                      outcome === "Win"
+                        ? "bg-emerald-500/15 text-emerald-500"
+                        : outcome === "Loss"
+                          ? "bg-rose-500/15 text-rose-500"
+                          : "bg-muted/30 text-muted-foreground";
+
+                    const titles = rosterPlayers
+                      .flatMap((p) => {
+                        const pid = p.playerId!;
+                        const list = recentEntriesByPlayer.get(pid) ?? [];
+                        return list
+                          .filter((t) => {
+                            const ts = t.createdAt.getTime();
+                            if (t.kind !== "gg" && t.kind !== "mvp" && t.kind !== "svp") {
+                              return false;
+                            }
+                            return ts >= entryWindowStart && ts <= entryWindowEnd;
+                          })
+                          .map((t) => ({ playerId: pid, kind: t.kind }));
+                      })
+                      // de-dupe (playerId+kind) inside a match card
+                      .filter((t, idx, arr) => {
+                        const key = `${t.playerId}:${t.kind}`;
+                        return arr.findIndex((x) => `${x.playerId}:${x.kind}` === key) === idx;
+                      });
+
+                    const hasContent = titles.length > 0 || wonCount > 0 || lossCount > 0;
+                    if (!hasContent) return null;
+
+                    const playersForCard =
+                      outcome === "Win"
+                        ? wonRoster
+                        : outcome === "Loss"
+                          ? lostRoster
+                          : rosterPlayers;
 
                     return (
                       <Card size="sm" key={m.id}>
                         <CardHeader>
                           <CardTitle className="flex items-center gap-2">
                             <span
-                              className={`inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                                m.winningSide === "dire"
-                                  ? "bg-red-500/15 text-red-500"
-                                  : "bg-emerald-500/15 text-emerald-500"
-                              }`}
+                              className={cn(
+                                "inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                                outcomeClass
+                              )}
                             >
-                              {winningSideLabel}
+                              {outcome}
                             </span>
                           </CardTitle>
                           <CardAction>
@@ -494,55 +571,44 @@ export default function Home() {
                             <div className="flex flex-wrap gap-1.5">
                               {titles.map((t) => {
                                 const titleColor =
-                                  t.titleKey === "mvp"
+                                  t.kind === "mvp"
                                     ? "text-orange-400"
-                                    : t.titleKey === "svp"
+                                    : t.kind === "svp"
                                       ? "text-yellow-300"
                                       : "text-white";
                                 return (
                                   <span
-                                    key={t.id}
+                                    key={`${t.playerId}:${t.kind}`}
                                     className="inline-flex items-center gap-1.5 border border-border bg-muted/20 px-2 py-0.5 text-[11px]"
                                   >
                                     <span
-                                      className={`text-[10px] font-semibold uppercase tracking-wide ${titleColor}`}
+                                      className={cn(
+                                        "text-[10px] font-semibold uppercase tracking-wide",
+                                        titleColor
+                                      )}
                                     >
-                                      {titleLabels[t.titleKey] ?? t.titleKey}
+                                      {entryKindShortLabel(t.kind)}
                                     </span>
                                     <span className="font-medium text-foreground">
-                                      {displayNameFor(t.playerId, t.displayName)}
+                                      {displayNameFor(t.playerId, "Unknown")}
                                     </span>
                                   </span>
                                 );
                               })}
                             </div>
                           )}
-                          <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
-                            {winners.length > 0 && (
-                              <>
-                                <span className="font-semibold uppercase tracking-wide text-emerald-500">
-                                  Won
-                                </span>
-                                <span className="text-foreground">
-                                  {winners
-                                    .map((p) => displayNameFor(p.playerId, p.displayName))
-                                    .join(", ")}
-                                </span>
-                              </>
-                            )}
-                            {losers.length > 0 && (
-                              <>
-                                <span className="font-semibold uppercase tracking-wide text-rose-500">
-                                  Lost
-                                </span>
-                                <span className="text-muted-foreground">
-                                  {losers
-                                    .map((p) => displayNameFor(p.playerId, p.displayName))
-                                    .join(", ")}
-                                </span>
-                              </>
-                            )}
-                          </div>
+                          {playersForCard.length > 0 && (
+                            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
+                              <span className="font-semibold uppercase tracking-wide text-muted-foreground">
+                                Players
+                              </span>
+                              <span className="text-foreground">
+                                {playersForCard
+                                  .map((p) => displayNameFor(p.playerId, p.displayName))
+                                  .join(", ")}
+                              </span>
+                            </div>
+                          )}
                         </CardContent>
                       </Card>
                     );

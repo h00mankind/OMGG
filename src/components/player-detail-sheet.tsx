@@ -157,7 +157,7 @@ export function PlayerDetailSheet({ player, entries, onClose }: Props) {
                   const kind = normalizeEntryKind(e.kind);
                   return (
                     <li
-                      key={i}
+                      key={e.id ?? `${e.playerId}-${e.createdAt.toISOString()}-${i}`}
                       className="flex items-center justify-between px-2 py-1.5 text-sm odd:bg-muted/30"
                     >
                       <span className="font-medium text-foreground">

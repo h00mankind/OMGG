@@ -270,9 +270,11 @@ export default function LogPage() {
       const targetName = target ? normalizeName(target.displayName) : "";
       return {
         ...prev,
-        players: prev.players.map((p) =>
-          p.slot === slot ? { ...p, rosterId } : p
-        ),
+        players: prev.players.map((p) => {
+          if (p.slot === slot) return { ...p, rosterId };
+          if (rosterId && p.rosterId === rosterId) return { ...p, rosterId: null };
+          return p;
+        }),
         titles: prev.titles.map((t) =>
           targetName && normalizeName(t.displayName) === targetName
             ? { ...t, rosterId }
@@ -280,7 +282,18 @@ export default function LogPage() {
         ),
       };
     });
-    setScanSelection((prev) => ({ ...prev, [slot]: rosterId !== null }));
+    setScanSelection((prev) => {
+      const next = { ...prev, [slot]: rosterId !== null };
+      if (rosterId) {
+        const prevScan = scan;
+        if (prevScan) {
+          for (const p of prevScan.players) {
+            if (p.slot !== slot && p.rosterId === rosterId) next[p.slot] = false;
+          }
+        }
+      }
+      return next;
+    });
   };
 
   const addTitleToPlayer = (slot: number, key: string) => {

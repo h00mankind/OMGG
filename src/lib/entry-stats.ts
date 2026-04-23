@@ -10,6 +10,7 @@ import {
 } from "@/lib/entry-kinds";
 
 export type EntryRow = {
+  id?: string;
   playerId: string;
   kind?: string | null;
   createdAt: Date;
