@@ -107,7 +107,6 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.21 0.006 285.885);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.455 0.188 13.697);
   --primary-foreground: oklch(0.969 0.015 12.422);
   --secondary: oklch(0.274 0.006 286.033);
   --secondary-foreground: oklch(0.985 0 0);
@@ -133,9 +132,17 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.552 0.016 285.938);
+}
+
+/* @playground:tokens-start */
+/* Tokens controlled by /playground. The dev-only "Save to globals.css" button
+   rewrites this block. Edit by hand or via the playground. */
+.dark {
+  --primary: oklch(0.455 0.188 13.697);
   --surface: oklch(0.18 0.008 286);
   --surface-2: oklch(0.24 0.008 286);
 }
+/* @playground:tokens-end */
 
 @layer utilities {
   .font-display {

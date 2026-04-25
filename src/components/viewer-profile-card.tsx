@@ -2,6 +2,7 @@
 
 import { Trophy } from "lucide-react";
 import { useViewer } from "@/lib/viewer";
+import type { RosterMember } from "@/lib/config";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -19,12 +20,15 @@ export function ViewerProfileCard({
   stats,
   onViewProfile,
   onPickViewer,
+  viewerOverride,
 }: {
   stats: ViewerProfileStats | null;
   onViewProfile?: () => void;
   onPickViewer?: () => void;
+  viewerOverride?: RosterMember | null;
 }) {
-  const { viewer } = useViewer();
+  const { viewer: hookViewer } = useViewer();
+  const viewer = viewerOverride !== undefined ? viewerOverride : hookViewer;
 
   if (!viewer || !stats) {
     return (
