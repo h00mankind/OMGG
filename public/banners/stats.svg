@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 400" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <radialGradient id="glow" cx="70%" cy="40%" r="55%">
+      <stop offset="0%" stop-color="#ff6644" stop-opacity="0.45"/>
+      <stop offset="40%" stop-color="#7a1a0c" stop-opacity="0.25"/>
+      <stop offset="80%" stop-color="#0a0606" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#08060e"/>
+      <stop offset="50%" stop-color="#160a10"/>
+      <stop offset="100%" stop-color="#28080a"/>
+    </linearGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#ff5533" stroke-opacity="0.04" stroke-width="0.5"/>
+    </pattern>
+  </defs>
+  <rect width="1600" height="400" fill="url(#bg)"/>
+  <rect width="1600" height="400" fill="url(#grid)"/>
+  <rect width="1600" height="400" fill="url(#glow)"/>
+  <g opacity="0.55" stroke="#ff7733" stroke-width="1.2" fill="none">
+    <path d="M 100 320 L 180 260 L 260 280 L 340 200 L 420 220 L 500 140 L 580 160 L 660 100"/>
+    <path d="M 100 340 L 180 320 L 260 300 L 340 280 L 420 240 L 500 220 L 580 200 L 660 180" stroke-opacity="0.5"/>
+  </g>
+  <g opacity="0.7">
+    <circle cx="180" cy="260" r="3" fill="#ff7733"/>
+    <circle cx="340" cy="200" r="3" fill="#ff7733"/>
+    <circle cx="500" cy="140" r="3" fill="#ff7733"/>
+    <circle cx="660" cy="100" r="3" fill="#ffaa55"/>
+  </g>
+  <g opacity="0.3" fill="#ff7733">
+    <rect x="900" y="280" width="20" height="40"/>
+    <rect x="940" y="240" width="20" height="80"/>
+    <rect x="980" y="200" width="20" height="120"/>
+    <rect x="1020" y="160" width="20" height="160"/>
+    <rect x="1060" y="220" width="20" height="100"/>
+    <rect x="1100" y="180" width="20" height="140"/>
+  </g>
+</svg>

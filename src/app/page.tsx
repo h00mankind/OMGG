@@ -12,37 +12,46 @@ import {
   aggregateByPlayer,
   aggregateMatchesByPlayer,
   computeStreaks,
+  ggCountsByDay,
   playerMetricCount,
   playerMetricLastAt,
   RANK_METRICS,
   titleStackedByDay,
   titleStackedByMonth,
   titleStackedByWeek,
-  trendByPlayer,
   type RankMetric,
-  type Trend,
 } from "@/lib/entry-stats";
-import { PlayerDetailSheet, type PlayerDetail } from "@/components/player-detail-sheet";
+import { useViewer } from "@/lib/viewer";
+import {
+  PlayerDetailSheet,
+  type PlayerDetail,
+} from "@/components/player-detail-sheet";
 import {
   ChartContainer,
   ChartTooltip,
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card";
+import { PageLayout } from "@/components/page-layout";
+import { PageHeader } from "@/components/page-header";
+import { LeaderboardSummaryCard } from "@/components/leaderboard-summary-card";
+import { PlayerRow, PlayerRowHeader } from "@/components/player-row";
+import { ViewerProfileCard } from "@/components/viewer-profile-card";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { ChevronUp, ChevronDown, Minus } from "lucide-react";
+  RecentMatchesCard,
+  type RecentMatchItem,
+} from "@/components/recent-matches-card";
+import { MmrTrendCard, type TrendPoint } from "@/components/mmr-trend-card";
+import { Flame, Sword } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  Bar, BarChart, Line, LineChart,
-  CartesianGrid, XAxis, YAxis,
+  Bar,
+  BarChart,
+  Line,
+  LineChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
 } from "recharts";
 
 type ChartInterval = "daily" | "weekly" | "monthly";
@@ -60,29 +69,20 @@ function timeAgo(date: Date): string {
   return `${days}d ago`;
 }
 
-const rosterById = new Map(ROSTER.map((p) => [p.id, p]));
-
-function TrendBadge({ trend }: { trend: Trend }) {
-  if (trend === "up")
-    return (
-      <span className="inline-flex size-6 items-center justify-center bg-emerald-500/15 text-emerald-500">
-        <ChevronUp className="size-3.5" strokeWidth={2.5} aria-label="Up" />
-      </span>
-    );
-  if (trend === "down")
-    return (
-      <span className="inline-flex size-6 items-center justify-center bg-rose-500/15 text-rose-500">
-        <ChevronDown className="size-3.5" strokeWidth={2.5} aria-label="Down" />
-      </span>
-    );
-  return (
-    <span className="inline-flex size-6 items-center justify-center text-muted-foreground/40">
-      <Minus className="size-3" aria-label="Stable" />
-    </span>
-  );
+function formatDuration(seconds: number | null): string {
+  if (!seconds || seconds <= 0) return "—";
+  const m = Math.floor(seconds / 60);
+  const s = Math.floor(seconds % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
-const INTERVAL_LABELS: Record<ChartInterval, string> = { daily: "Daily", weekly: "Weekly", monthly: "Monthly" };
+const rosterById = new Map(ROSTER.map((p) => [p.id, p]));
+
+const INTERVAL_LABELS: Record<ChartInterval, string> = {
+  daily: "Daily",
+  weekly: "Weekly",
+  monthly: "Monthly",
+};
 const TYPE_LABELS: Record<ChartType, string> = { bar: "Bar", line: "Line" };
 
 const CHART_COLORS = [
@@ -100,19 +100,6 @@ const dayGgChartConfig = Object.fromEntries(
     { label: p.name, color: CHART_COLORS[i % CHART_COLORS.length] },
   ])
 ) satisfies ChartConfig;
-
-function StatChip({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="border border-border bg-muted/20 px-3 py-2">
-      <div className="text-sm font-semibold tabular-nums text-foreground">
-        {value}
-      </div>
-      <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-        {label}
-      </div>
-    </div>
-  );
-}
 
 export default function Home() {
   const { isLoading, error, data } = db.useQuery({
@@ -136,6 +123,7 @@ export default function Home() {
   const [rankMetric, setRankMetric] = useState<RankMetric>(ENTRY_KIND_GG);
   const [chartInterval, setChartInterval] = useState<ChartInterval>("daily");
   const [chartType, setChartType] = useState<ChartType>("bar");
+  const { viewer } = useViewer();
 
   const entries = data?.entries ?? [];
   const matches = data?.matches ?? [];
@@ -143,11 +131,12 @@ export default function Home() {
   const matchSummary = aggregateMatchesByPlayer(matches, entries);
   const matchByPlayer = matchSummary.byPlayer;
   const chartSeries =
-    chartInterval === "weekly" ? titleStackedByWeek(entries, rankMetric) :
-    chartInterval === "monthly" ? titleStackedByMonth(entries, rankMetric) :
-    titleStackedByDay(entries, rankMetric);
+    chartInterval === "weekly"
+      ? titleStackedByWeek(entries, rankMetric)
+      : chartInterval === "monthly"
+        ? titleStackedByMonth(entries, rankMetric)
+        : titleStackedByDay(entries, rankMetric);
   const { longestByPlayer } = computeStreaks(entries);
-  const trends = trendByPlayer(entries, rankMetric);
   const metricLabel = entryKindShortLabel(rankMetric);
 
   const leaderboard = ROSTER.map((p) => ({
@@ -166,15 +155,6 @@ export default function Home() {
     return 0;
   });
 
-  const medalFor = (rank: number, value: number) => {
-    if (value === 0) return "";
-    if (rank === 0) return "🥇";
-    if (rank === 1) return "🥈";
-    if (rank === 2) return "🥉";
-    return "";
-  };
-
-  const recentMatches = matches.slice(0, 8);
   const recentEntriesByPlayer = (() => {
     const m = new Map<string, { kind: EntryKind; createdAt: Date }[]>();
     for (const e of entries) {
@@ -195,12 +175,6 @@ export default function Home() {
     return m;
   })();
 
-  const displayNameFor = (playerId: string | null | undefined, fallback: string) =>
-    (playerId && rosterById.get(playerId)?.name) || fallback;
-  const totalMetric = leaderboard.reduce(
-    (sum, p) => sum + playerMetricCount(p, rankMetric),
-    0
-  );
   const totals = leaderboard.reduce(
     (sum, p) => {
       sum.gg += p.gg;
@@ -210,6 +184,115 @@ export default function Home() {
     },
     { gg: 0, mvp: 0, svp: 0 }
   );
+
+  const ranksByMetric = (() => {
+    const result: Record<RankMetric, Map<string, number>> = {
+      gg: new Map(),
+      mvp: new Map(),
+      svp: new Map(),
+    };
+    for (const m of RANK_METRICS) {
+      const ordered = [...ROSTER].map((p) => ({
+        id: p.id,
+        v: byPlayer.get(p.id)?.[m] ?? 0,
+      }));
+      ordered.sort((a, b) => b.v - a.v);
+      ordered.forEach((row, i) => {
+        result[m].set(row.id, row.v > 0 ? i + 1 : 0);
+      });
+    }
+    return result;
+  })();
+
+  const viewerStats = (() => {
+    if (!viewer) return null;
+    const agg = byPlayer.get(viewer.id);
+    const matchAgg = matchByPlayer.get(viewer.id);
+    if (!agg || !matchAgg) return null;
+    const ggRank = ranksByMetric.gg.get(viewer.id) ?? 0;
+    return {
+      gg: agg.gg,
+      matches: matchAgg.matches,
+      wins: matchAgg.wins,
+      losses: matchAgg.losses,
+      rank: ggRank > 0 ? ggRank : null,
+    };
+  })();
+
+  const trendSeries: TrendPoint[] = viewer
+    ? ggCountsByDay(
+        entries.filter(
+          (e) => e.playerId === viewer.id && (e.kind ?? "gg") === "gg"
+        )
+      ).map((p) => ({ day: p.day, value: p.gg }))
+    : [];
+
+  const trendDelta = trendSeries.length
+    ? trendSeries[trendSeries.length - 1].value
+    : 0;
+  const trendTotal = viewerStats?.gg ?? 0;
+
+  const recentMatches: RecentMatchItem[] = matches.slice(0, 5).map((m) => {
+      const playedAt = m.playedAt ?? m.createdAt;
+      const rosterPlayers = (m.players ?? []).filter(
+        (p): p is typeof p & { playerId: string } =>
+          !!p.playerId && rosterById.has(p.playerId)
+      );
+      const winLoss = new Map<string, { win: boolean; loss: boolean }>();
+      const start = playedAt.getTime();
+      const end = start + 5000;
+      for (const p of rosterPlayers) {
+        const list = recentEntriesByPlayer.get(p.playerId) ?? [];
+        const win = list.some(
+          (t) =>
+            t.kind === "win" &&
+            t.createdAt.getTime() >= start &&
+            t.createdAt.getTime() <= end
+        );
+        const loss = list.some(
+          (t) =>
+            t.kind === "loss" &&
+            t.createdAt.getTime() >= start &&
+            t.createdAt.getTime() <= end
+        );
+        winLoss.set(p.playerId, { win, loss });
+      }
+      const wonCount = [...winLoss.values()].filter((v) => v.win).length;
+      const lossCount = [...winLoss.values()].filter((v) => v.loss).length;
+      const outcome: "W" | "L" | "—" =
+        wonCount === 0 && lossCount === 0
+          ? "—"
+          : wonCount >= lossCount
+            ? "W"
+            : "L";
+
+      let titleLabel: string | null = null;
+      for (const p of rosterPlayers) {
+        const list = recentEntriesByPlayer.get(p.playerId) ?? [];
+        const t = list.find(
+          (x) =>
+            (x.kind === "mvp" || x.kind === "svp" || x.kind === "gg") &&
+            x.createdAt.getTime() >= start &&
+            x.createdAt.getTime() <= end
+        );
+        if (t) {
+          titleLabel = entryKindShortLabel(t.kind);
+          break;
+        }
+      }
+
+      return {
+        id: m.id ?? `${start}`,
+        outcome,
+        agoLabel: timeAgo(playedAt),
+        titleLabel,
+        participants: rosterPlayers.map((p) => ({
+          id: p.playerId,
+          name: rosterById.get(p.playerId)?.name ?? p.displayName ?? "?",
+        })),
+        durationLabel: formatDuration(m.durationSeconds ?? null),
+      };
+    });
 
   const selectedPlayer: PlayerDetail | null = selectedId
     ? (() => {
@@ -234,428 +317,328 @@ export default function Home() {
     : null;
 
   return (
-    <div className="mx-auto max-w-2xl px-8 pt-5 pb-32 space-y-5">
-        {isLoading && (
-          <div className="space-y-4 animate-pulse">
-            <div className="h-24 bg-muted rounded-xl" />
-            <div className="h-48 bg-muted rounded-xl" />
-          </div>
-        )}
+    <PageLayout
+      header={
+        <PageHeader
+          eyebrow={
+            <>
+              <Sword className="size-3" aria-hidden />
+              <span>The crew, ranked</span>
+            </>
+          }
+          title="Leaderboard"
+          subtitle="Live standings for the current title — updates every time someone logs a match."
+          banner="/banners/leaderboard.svg"
+          bannerAlt="Leaderboard banner"
+        />
+      }
+      rail={
+        <>
+          <ViewerProfileCard
+            stats={viewerStats}
+            onViewProfile={() => viewer && setSelectedId(viewer.id)}
+          />
+          <RecentMatchesCard matches={recentMatches} />
+          <MmrTrendCard
+            total={trendTotal}
+            delta={trendDelta}
+            series={trendSeries}
+            label="GG Trend (14d)"
+          />
+        </>
+      }
+    >
+      {isLoading && (
+        <div className="space-y-4">
+          <div className="h-24 surface-card animate-pulse" />
+          <div className="h-72 surface-card animate-pulse" />
+        </div>
+      )}
 
-        {error && (
-          <div className="rounded-xl border border-destructive p-4 text-destructive text-center">
-            Something went wrong: {error.message}
-          </div>
-        )}
+      {error && (
+        <div className="surface-card border border-destructive/40 px-5 py-6 text-center text-destructive">
+          Something went wrong: {error.message}
+        </div>
+      )}
 
-        {!isLoading && !error && (
-          <>
-            <Card>
-              <CardHeader>
-                <div>
-                  <CardTitle>Leaderboard</CardTitle>
-                  <CardDescription>
-                    Rank by GG, MVP, or SVP. GG stays the default.
-                  </CardDescription>
-                </div>
-                <CardAction>
-                  <div className="flex border border-border overflow-hidden">
-                    {RANK_METRICS.map((metric) => (
-                      <button
-                        key={metric}
-                        onClick={() => setRankMetric(metric)}
-                        className={cn(
-                          "px-2.5 py-1 text-xs font-medium uppercase transition-colors",
-                          rankMetric === metric
-                            ? "bg-primary text-primary-foreground"
-                            : "text-muted-foreground hover:text-foreground"
-                        )}
-                      >
-                        {entryKindShortLabel(metric)}
-                      </button>
+      {!isLoading && !error && (
+        <>
+          <MetricTabs metric={rankMetric} onChange={setRankMetric} />
+
+          <LeaderboardSummaryCard
+            rank={
+              viewer
+                ? ranksByMetric[rankMetric].get(viewer.id) || null
+                : null
+            }
+            stats={[
+              {
+                label: "GG Rank",
+                value: viewer
+                  ? rankBadge(ranksByMetric.gg.get(viewer.id) ?? 0)
+                  : totals.gg,
+                highlight: rankMetric === "gg",
+              },
+              {
+                label: "MVP Rank",
+                value: viewer
+                  ? rankBadge(ranksByMetric.mvp.get(viewer.id) ?? 0)
+                  : totals.mvp,
+                highlight: rankMetric === "mvp",
+              },
+              {
+                label: "SVP Rank",
+                value: viewer
+                  ? rankBadge(ranksByMetric.svp.get(viewer.id) ?? 0)
+                  : totals.svp,
+                highlight: rankMetric === "svp",
+              },
+              {
+                label: "Total Matches",
+                value: matchSummary.totalMatches,
+              },
+            ]}
+          />
+
+          {matchSummary.inferredLegacyMatches > 0 && (
+            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              {matchSummary.inferredLegacyMatches} legacy match
+              {matchSummary.inferredLegacyMatches === 1 ? "" : "es"} inferred
+              from old entries.
+            </p>
+          )}
+
+          <section className="surface-card overflow-hidden">
+            <PlayerRowHeader metricLabel={metricLabel} />
+            <div>
+              {leaderboard.map((p, i) => {
+                const lastAt = playerMetricLastAt(p, rankMetric);
+                return (
+                  <PlayerRow
+                    key={p.id}
+                    onClick={() => setSelectedId(p.id)}
+                    data={{
+                      id: p.id,
+                      name: p.name,
+                      rank: i + 1,
+                      metricLabel,
+                      metricValue: playerMetricCount(p, rankMetric),
+                      matches: p.matches,
+                      wins: p.wins,
+                      losses: p.losses,
+                      gg: p.gg,
+                      mvp: p.mvp,
+                      svp: p.svp,
+                      lastAtLabel: lastAt ? timeAgo(lastAt) : null,
+                      isViewer: viewer?.id === p.id,
+                    }}
+                  />
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="surface-card overflow-hidden">
+            <header className="flex items-center justify-between border-b border-white/5 px-5 py-3">
+              <div>
+                <h3 className="font-display text-sm font-bold uppercase tracking-[0.18em] text-foreground">
+                  {metricLabel} chart
+                </h3>
+                <p className="mt-0.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">
+                  {chartInterval === "daily"
+                    ? "Last 14 days"
+                    : chartInterval === "weekly"
+                      ? "Last 12 weeks"
+                      : "Last 6 months"}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <ToggleStrip
+                  options={["daily", "weekly", "monthly"] as ChartInterval[]}
+                  value={chartInterval}
+                  onChange={setChartInterval}
+                  labels={INTERVAL_LABELS}
+                />
+                <ToggleStrip
+                  options={["bar", "line"] as ChartType[]}
+                  value={chartType}
+                  onChange={setChartType}
+                  labels={TYPE_LABELS}
+                />
+              </div>
+            </header>
+            <div className="px-3 pt-3 pb-4">
+              <ChartContainer
+                config={dayGgChartConfig}
+                className="aspect-auto h-64 w-full"
+              >
+                {chartType === "bar" ? (
+                  <BarChart
+                    data={chartSeries}
+                    margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid vertical={false} strokeOpacity={0.1} />
+                    <XAxis
+                      dataKey="label"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      fontSize={11}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      width={28}
+                    />
+                    <ChartTooltip
+                      content={<ChartTooltipContent hideLabel={false} indicator="dot" />}
+                    />
+                    {ROSTER.map((p) => (
+                      <Bar
+                        key={p.id}
+                        dataKey={p.id}
+                        name={p.name}
+                        stackId="stack"
+                        fill={`var(--color-${p.id})`}
+                      />
                     ))}
-                  </div>
-                </CardAction>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  <StatChip label="GG" value={totals.gg} />
-                  <StatChip label="MVP" value={totals.mvp} />
-                  <StatChip label="SVP" value={totals.svp} />
-                  <StatChip label="Matches" value={matchSummary.totalMatches} />
-                </div>
-                {matchSummary.inferredLegacyMatches > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {matchSummary.inferredLegacyMatches} legacy match
-                    {matchSummary.inferredLegacyMatches === 1 ? "" : "es"} inferred
-                    from old `entries` timestamps.
-                  </p>
+                  </BarChart>
+                ) : (
+                  <LineChart
+                    data={chartSeries}
+                    margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+                  >
+                    <CartesianGrid vertical={false} strokeOpacity={0.1} />
+                    <XAxis
+                      dataKey="label"
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      fontSize={11}
+                    />
+                    <YAxis
+                      allowDecimals={false}
+                      tickLine={false}
+                      axisLine={false}
+                      tickMargin={8}
+                      width={28}
+                    />
+                    <ChartTooltip
+                      content={<ChartTooltipContent hideLabel={false} indicator="dot" />}
+                    />
+                    {ROSTER.map((p) => (
+                      <Line
+                        key={p.id}
+                        dataKey={p.id}
+                        name={p.name}
+                        type="monotone"
+                        stroke={`var(--color-${p.id})`}
+                        strokeWidth={2}
+                        dot={false}
+                        activeDot={{ r: 4 }}
+                      />
+                    ))}
+                  </LineChart>
                 )}
-                {totalMetric === 0 && (
-                  <div className="mb-4 rounded-lg border border-dashed border-muted-foreground/30 bg-muted/30 px-4 py-6 text-center">
-                    <p className="text-sm font-medium text-foreground">
-                      No {metricLabel} entries yet.
-                    </p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      Log one to kick off this ranking.
-                    </p>
-                  </div>
-                )}
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead className="w-16">#</TableHead>
-                        <TableHead>Player</TableHead>
-                        <TableHead className="text-right">{metricLabel}</TableHead>
-                        <TableHead className="text-right">Matches</TableHead>
-                        <TableHead className="text-right whitespace-nowrap">
-                          Last {metricLabel}
-                        </TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {leaderboard.map((p, i) => {
-                        const lastAt = playerMetricLastAt(p, rankMetric);
-                        return (
-                          <TableRow
-                            key={p.id}
-                            onClick={() => setSelectedId(p.id)}
-                            className="cursor-pointer transition-colors hover:bg-muted/50"
-                          >
-                            <TableCell>
-                              <div className="flex items-center gap-1.5">
-                                <TrendBadge trend={trends.get(p.id) ?? "flat"} />
-                                <span className="text-muted-foreground tabular-nums">
-                                  {medalFor(i, playerMetricCount(p, rankMetric)) || i + 1}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              <div className="font-medium">{p.name}</div>
-                              <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
-                                GG {p.gg} · MVP {p.mvp} · SVP {p.svp} · W-L {p.wins}-{p.losses}
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {playerMetricCount(p, rankMetric)}
-                            </TableCell>
-                            <TableCell className="text-right tabular-nums">
-                              {p.matches}
-                            </TableCell>
-                            <TableCell className="text-right text-muted-foreground text-sm whitespace-nowrap">
-                              {lastAt ? timeAgo(lastAt) : "—"}
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              </CardContent>
-            </Card>
+              </ChartContainer>
+            </div>
+          </section>
 
-            <Card>
-              <CardHeader>
-                <div>
-                  <CardTitle>{metricLabel} Chart</CardTitle>
-                  <CardDescription>
-                    {chartInterval === "daily" ? "Last 14 days" :
-                     chartInterval === "weekly" ? "Last 12 weeks" : "Last 6 months"}
-                    {" · "}ranking title only
-                  </CardDescription>
-                </div>
-                <CardAction>
-                  <div className="flex items-center gap-2">
-                    {/* Interval toggle */}
-                    <div className="flex border border-border overflow-hidden">
-                      {(["daily", "weekly", "monthly"] as ChartInterval[]).map((iv) => (
-                        <button
-                          key={iv}
-                          onClick={() => setChartInterval(iv)}
-                          className={cn(
-                            "px-2.5 py-1 text-xs font-medium transition-colors",
-                            chartInterval === iv
-                              ? "bg-primary text-primary-foreground"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          {INTERVAL_LABELS[iv]}
-                        </button>
-                      ))}
-                    </div>
-                    {/* Type toggle */}
-                    <div className="flex border border-border overflow-hidden">
-                      {(["bar", "line"] as ChartType[]).map((ct) => (
-                        <button
-                          key={ct}
-                          onClick={() => setChartType(ct)}
-                          className={cn(
-                            "px-2.5 py-1 text-xs font-medium transition-colors",
-                            chartType === ct
-                              ? "bg-primary text-primary-foreground"
-                              : "text-muted-foreground hover:text-foreground"
-                          )}
-                        >
-                          {TYPE_LABELS[ct]}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </CardAction>
-              </CardHeader>
-              <CardContent>
-                <ChartContainer
-                  config={dayGgChartConfig}
-                  className="aspect-auto h-56 w-full"
-                >
-                  {chartType === "bar" ? (
-                    <BarChart
-                      data={chartSeries}
-                      margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                    >
-                      <CartesianGrid vertical={false} />
-                      <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
-                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} tickMargin={8} width={28} />
-                      <ChartTooltip content={<ChartTooltipContent hideLabel={false} indicator="dot" />} />
-                      {ROSTER.map((p) => (
-                        <Bar key={p.id} dataKey={p.id} name={p.name} stackId="stack" fill={`var(--color-${p.id})`} />
-                      ))}
-                    </BarChart>
-                  ) : (
-                    <LineChart
-                      data={chartSeries}
-                      margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
-                    >
-                      <CartesianGrid vertical={false} />
-                      <XAxis dataKey="label" tickLine={false} axisLine={false} tickMargin={8} fontSize={11} />
-                      <YAxis allowDecimals={false} tickLine={false} axisLine={false} tickMargin={8} width={28} />
-                      <ChartTooltip content={<ChartTooltipContent hideLabel={false} indicator="dot" />} />
-                      {ROSTER.map((p) => (
-                        <Line
-                          key={p.id}
-                          dataKey={p.id}
-                          name={p.name}
-                          type="monotone"
-                          stroke={`var(--color-${p.id})`}
-                          strokeWidth={2}
-                          dot={false}
-                          activeDot={{ r: 4 }}
-                        />
-                      ))}
-                    </LineChart>
-                  )}
-                </ChartContainer>
-              </CardContent>
-            </Card>
-
-            {recentMatches.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Recent activity</CardTitle>
-                  <CardDescription>
-                    {(() => {
-                      const count = recentMatches.length;
-                      const total = matches.length;
-                      const oldest = recentMatches[count - 1];
-                      const oldestAt = oldest?.playedAt ?? oldest?.createdAt;
-                      const span = oldestAt ? ` · since ${timeAgo(oldestAt)}` : "";
-                      const more = total > count ? ` of ${total}` : "";
-                      return `Last ${count} match${count === 1 ? "" : "es"}${more}${span}`;
-                    })()}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  {recentMatches.map((m) => {
-                    const playedAt = m.playedAt ?? m.createdAt;
-                    const rosterPlayers = (m.players ?? []).filter(
-                      (p) => !!p.playerId && rosterById.has(p.playerId)
-                    );
-                    const entryWindowStart = playedAt.getTime();
-                    const entryWindowEnd = entryWindowStart + 5000;
-
-                    const winLossByPlayer = new Map<
-                      string,
-                      { win: boolean; loss: boolean }
-                    >();
-                    for (const p of rosterPlayers) {
-                      const pid = p.playerId!;
-                      const list = recentEntriesByPlayer.get(pid) ?? [];
-                      const win = list.some((t) => {
-                        if (t.kind !== "win") return false;
-                        const ts = t.createdAt.getTime();
-                        return ts >= entryWindowStart && ts <= entryWindowEnd;
-                      });
-                      const loss = list.some((t) => {
-                        if (t.kind !== "loss") return false;
-                        const ts = t.createdAt.getTime();
-                        return ts >= entryWindowStart && ts <= entryWindowEnd;
-                      });
-                      winLossByPlayer.set(pid, { win, loss });
-                    }
-
-                    const wonRoster = rosterPlayers.filter((p) => {
-                      const pid = p.playerId!;
-                      return winLossByPlayer.get(pid)?.win;
-                    });
-                    const lostRoster = rosterPlayers.filter((p) => {
-                      const pid = p.playerId!;
-                      return winLossByPlayer.get(pid)?.loss;
-                    });
-
-                    const wonCount = wonRoster.length;
-                    const lossCount = lostRoster.length;
-                    const isMixed = wonCount > 0 && lossCount > 0;
-                    const outcome =
-                      wonCount === 0 && lossCount === 0
-                        ? "Match"
-                        : wonCount >= lossCount
-                          ? "Win"
-                          : "Loss";
-                    const outcomeClass =
-                      outcome === "Win"
-                        ? "bg-emerald-500/15 text-emerald-500"
-                        : outcome === "Loss"
-                          ? "bg-rose-500/15 text-rose-500"
-                          : "bg-muted/30 text-muted-foreground";
-
-                    const titles = rosterPlayers
-                      .flatMap((p) => {
-                        const pid = p.playerId!;
-                        const list = recentEntriesByPlayer.get(pid) ?? [];
-                        return list
-                          .filter((t) => {
-                            const ts = t.createdAt.getTime();
-                            if (t.kind !== "gg" && t.kind !== "mvp" && t.kind !== "svp") {
-                              return false;
-                            }
-                            return ts >= entryWindowStart && ts <= entryWindowEnd;
-                          })
-                          .map((t) => ({ playerId: pid, kind: t.kind }));
-                      })
-                      // de-dupe (playerId+kind) inside a match card
-                      .filter((t, idx, arr) => {
-                        const key = `${t.playerId}:${t.kind}`;
-                        return arr.findIndex((x) => `${x.playerId}:${x.kind}` === key) === idx;
-                      });
-
-                    const hasContent = titles.length > 0 || wonCount > 0 || lossCount > 0;
-                    if (!hasContent) return null;
-
-                    const playersForCard =
-                      outcome === "Win"
-                        ? wonRoster
-                        : outcome === "Loss"
-                          ? lostRoster
-                          : rosterPlayers;
-
-                    return (
-                      <Card size="sm" key={m.id}>
-                        <CardHeader>
-                          <CardTitle className="flex items-center gap-2">
-                            {isMixed ? (
-                              <>
-                                <span className="inline-flex items-center bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-500">
-                                  WIN
-                                </span>
-                                <span className="inline-flex items-center bg-rose-500/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-500">
-                                  LOSS
-                                </span>
-                              </>
-                            ) : (
-                              <span
-                                className={cn(
-                                  "inline-flex items-center px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
-                                  outcomeClass
-                                )}
-                              >
-                                {outcome}
-                              </span>
-                            )}
-                          </CardTitle>
-                          <CardAction>
-                            <span className="text-[11px] text-muted-foreground">
-                              {timeAgo(playedAt)}
-                            </span>
-                          </CardAction>
-                        </CardHeader>
-                        <CardContent className="space-y-2.5">
-                          {titles.length > 0 && (
-                            <div className="flex flex-wrap gap-1.5">
-                              {titles.map((t) => {
-                                const titleColor =
-                                  t.kind === "mvp"
-                                    ? "text-orange-400"
-                                    : t.kind === "svp"
-                                      ? "text-yellow-300"
-                                      : "text-white";
-                                return (
-                                  <span
-                                    key={`${t.playerId}:${t.kind}`}
-                                    className="inline-flex items-center gap-1.5 border border-border bg-muted/20 px-2 py-0.5 text-[11px]"
-                                  >
-                                    <span
-                                      className={cn(
-                                        "text-[10px] font-semibold uppercase tracking-wide",
-                                        titleColor
-                                      )}
-                                    >
-                                      {entryKindShortLabel(t.kind)}
-                                    </span>
-                                    <span className="font-medium text-foreground">
-                                      {displayNameFor(t.playerId, "Unknown")}
-                                    </span>
-                                  </span>
-                                );
-                              })}
-                            </div>
-                          )}
-                          {isMixed ? (
-                            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
-                              <span className="font-semibold uppercase tracking-wide text-emerald-500">
-                                WIN
-                              </span>
-                              <span className="text-foreground">
-                                {wonRoster
-                                  .map((p) => displayNameFor(p.playerId, p.displayName))
-                                  .join(", ")}
-                              </span>
-                              <span className="font-semibold uppercase tracking-wide text-rose-500">
-                                LOSS
-                              </span>
-                              <span className="text-foreground">
-                                {lostRoster
-                                  .map((p) => displayNameFor(p.playerId, p.displayName))
-                                  .join(", ")}
-                              </span>
-                            </div>
-                          ) : playersForCard.length > 0 && (
-                            <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[11px]">
-                              <span className="font-semibold uppercase tracking-wide text-muted-foreground">
-                                Players
-                              </span>
-                              <span className="text-foreground">
-                                {playersForCard
-                                  .map((p) => displayNameFor(p.playerId, p.displayName))
-                                  .join(", ")}
-                              </span>
-                            </div>
-                          )}
-                        </CardContent>
-                      </Card>
-                    );
-                  })}
-                </CardContent>
-              </Card>
-            )}
-          </>
-        )}
+          {longestByPlayer.size > 0 && (
+            <section className="surface-card flex items-center gap-3 px-5 py-4">
+              <Flame className="size-5 text-orange-400" aria-hidden />
+              <div className="text-xs text-muted-foreground">
+                Longest streak:{" "}
+                <span className="font-display font-semibold uppercase tracking-[0.12em] text-foreground">
+                  {[...longestByPlayer.entries()]
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 1)
+                    .map(
+                      ([id, n]) =>
+                        `${rosterById.get(id)?.name ?? id} · ${n} GG`
+                    )[0] ?? "—"}
+                </span>
+              </div>
+            </section>
+          )}
+        </>
+      )}
 
       <PlayerDetailSheet
         player={selectedPlayer}
         entries={entries}
         onClose={() => setSelectedId(null)}
       />
+    </PageLayout>
+  );
+}
+
+function rankBadge(rank: number): string {
+  if (!rank) return "—";
+  return `#${rank}`;
+}
+
+function MetricTabs({
+  metric,
+  onChange,
+}: {
+  metric: RankMetric;
+  onChange: (m: RankMetric) => void;
+}) {
+  return (
+    <div className="flex gap-1.5">
+      {RANK_METRICS.map((m) => {
+        const active = metric === m;
+        return (
+          <button
+            key={m}
+            type="button"
+            onClick={() => onChange(m)}
+            className={cn(
+              "px-5 py-2.5 font-display text-xs font-bold uppercase tracking-[0.2em] transition-all",
+              active
+                ? "bg-primary/15 text-primary border border-primary/60 glow-primary"
+                : "border border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/5",
+            )}
+          >
+            {entryKindShortLabel(m)}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ToggleStrip<T extends string>({
+  options,
+  value,
+  onChange,
+  labels,
+}: {
+  options: T[];
+  value: T;
+  onChange: (v: T) => void;
+  labels: Record<T, string>;
+}) {
+  return (
+    <div className="flex border border-white/10 overflow-hidden">
+      {options.map((opt) => (
+        <button
+          key={opt}
+          type="button"
+          onClick={() => onChange(opt)}
+          className={cn(
+            "px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.18em] transition-colors",
+            value === opt
+              ? "bg-primary/15 text-primary"
+              : "text-muted-foreground hover:text-foreground"
+          )}
+        >
+          {labels[opt]}
+        </button>
+      ))}
     </div>
   );
 }
