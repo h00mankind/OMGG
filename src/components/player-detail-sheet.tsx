@@ -1,10 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
-import { X, Flame } from "lucide-react";
+import { X, Flame, Trophy } from "lucide-react";
 import type { EntryRow } from "@/lib/entry-stats";
 import { entryKindShortLabel, normalizeEntryKind } from "@/lib/entry-kinds";
 import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { WinRateBar } from "@/components/win-rate-bar";
+import { playerColor, playerInitial } from "@/lib/player-color";
 import { cn } from "@/lib/utils";
 
 export type PlayerDetail = {
@@ -71,6 +74,7 @@ export function PlayerDetailSheet({ player, entries, onClose }: Props) {
     { label: "MVP", date: player.lastMvp },
     { label: "SVP", date: player.lastSvp },
   ].filter((item) => item.date);
+  const c = playerColor(player.id);
 
   return (
     <div
@@ -82,23 +86,37 @@ export function PlayerDetailSheet({ player, entries, onClose }: Props) {
       <button
         type="button"
         aria-label="Close"
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm animate-in fade-in"
+        className="absolute inset-0 bg-black/70 backdrop-blur-sm animate-in fade-in"
         onClick={onClose}
       />
       <div
         className={cn(
-          "relative w-full max-w-2xl border border-border bg-background shadow-2xl",
+          "surface-card relative w-full max-w-2xl shadow-2xl",
           "max-h-[85vh] overflow-y-auto",
           "sm:mx-4",
           "animate-in slide-in-from-bottom duration-300"
         )}
       >
-        <div className="sticky top-0 z-10 flex items-start justify-between gap-4 border-b border-border bg-background/95 backdrop-blur-sm px-8 py-4">
-          <div className="min-w-0">
-            <h2 id="player-detail-title" className="text-xl font-bold truncate">
+        <div className="sticky top-0 z-10 flex items-start gap-4 border-b border-white/5 bg-card/95 backdrop-blur-sm px-8 py-5">
+          <Avatar className={cn("size-14 shrink-0 ring-2 ring-primary/40", c.bg)}>
+            <AvatarFallback className={cn(c.bg, c.text, "text-lg font-bold")}>
+              {playerInitial(player.name)}
+            </AvatarFallback>
+          </Avatar>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-1.5">
+              <Trophy className="size-3.5 text-amber-400" aria-hidden />
+              <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-primary">
+                Player Profile
+              </span>
+            </div>
+            <h2
+              id="player-detail-title"
+              className="mt-0.5 font-display text-2xl font-bold uppercase tracking-[0.05em] text-foreground"
+            >
               {player.name}
             </h2>
-            <p className="text-xs text-muted-foreground">
+            <p className="mt-1 text-xs text-muted-foreground">
               {lastTitles.length > 0
                 ? `Last title ${timeAgo(
                     [...lastTitles].sort(
@@ -110,8 +128,12 @@ export function PlayerDetailSheet({ player, entries, onClose }: Props) {
             {lastTitles.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {lastTitles.map((item) => (
-                  <Badge key={item.label} variant="outline">
-                    {item.label} {timeAgo(item.date!)}
+                  <Badge
+                    key={item.label}
+                    variant="outline"
+                    className="border-white/10 text-[10px] uppercase tracking-[0.18em]"
+                  >
+                    {item.label} · {timeAgo(item.date!)}
                   </Badge>
                 ))}
               </div>
@@ -121,13 +143,13 @@ export function PlayerDetailSheet({ player, entries, onClose }: Props) {
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="flex size-8 shrink-0 items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
+            className="flex size-8 shrink-0 items-center justify-center text-muted-foreground hover:bg-white/5 hover:text-foreground"
           >
             <X className="size-4" aria-hidden />
           </button>
         </div>
 
-        <div className="px-8 py-5 space-y-6">
+        <div className="space-y-6 px-8 py-6">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="GG" value={player.gg} />
             <Stat label="MVP" value={player.mvp} />
@@ -135,32 +157,50 @@ export function PlayerDetailSheet({ player, entries, onClose }: Props) {
             <Stat label="Titles" value={player.totalTitles} />
             <Stat label="Matches" value={player.matches} />
             <Stat label="W-L" value={`${player.wins}-${player.losses}`} />
-            <Stat label="Win rate" value={winRate} />
+            <Stat label="Win Rate" value={winRate} />
             <Stat
-              label="Best streak"
+              label="Best Streak"
               value={player.longestStreak}
-              icon={player.longestStreak >= 3 ? <Flame className="size-3 text-orange-500" /> : null}
+              icon={
+                player.longestStreak >= 3 ? (
+                  <Flame className="size-4 text-orange-500" />
+                ) : null
+              }
             />
           </div>
 
+          {player.matches > 0 && (
+            <div className="surface-elevated flex items-center justify-between gap-4 px-5 py-4">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
+                  Win Rate
+                </div>
+                <div className="mt-0.5 font-display text-base font-semibold uppercase tracking-[0.06em] text-foreground">
+                  {player.wins} W / {player.losses} L
+                </div>
+              </div>
+              <WinRateBar wins={player.wins} matches={player.matches} />
+            </div>
+          )}
+
           <div className="space-y-2">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Recent activity
+            <h3 className="text-[10px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
+              Recent Activity
             </h3>
             {playerEntries.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 Nothing logged yet.
               </p>
             ) : (
-              <ul className="space-y-1">
+              <ul className="surface-elevated divide-y divide-white/5">
                 {playerEntries.map((e, i) => {
                   const kind = normalizeEntryKind(e.kind);
                   return (
                     <li
                       key={e.id ?? `${e.playerId}-${e.createdAt.toISOString()}-${i}`}
-                      className="flex items-center justify-between px-2 py-1.5 text-sm odd:bg-muted/30"
+                      className="flex items-center justify-between px-4 py-2 text-sm"
                     >
-                      <span className="font-medium text-foreground">
+                      <span className="font-display text-xs font-semibold uppercase tracking-[0.12em] text-foreground">
                         +1 {entryKindShortLabel(kind)}
                       </span>
                       <span className="text-xs text-muted-foreground">
@@ -188,12 +228,12 @@ function Stat({
   icon?: React.ReactNode;
 }) {
   return (
-    <div className="border border-border bg-card p-3 text-center">
-      <div className="flex items-center justify-center gap-1 text-lg font-bold tabular-nums">
+    <div className="surface-elevated px-4 py-3 text-center">
+      <div className="flex items-center justify-center gap-1 font-display text-2xl font-bold tabular-nums text-foreground">
         {icon}
         {value}
       </div>
-      <div className="mt-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+      <div className="mt-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">
         {label}
       </div>
     </div>

@@ -371,33 +371,36 @@ export default function Home() {
                 ? ranksByMetric[rankMetric].get(viewer.id) || null
                 : null
             }
-            stats={[
-              {
-                label: "GG Rank",
-                value: viewer
-                  ? rankBadge(ranksByMetric.gg.get(viewer.id) ?? 0)
-                  : totals.gg,
-                highlight: rankMetric === "gg",
-              },
-              {
-                label: "MVP Rank",
-                value: viewer
-                  ? rankBadge(ranksByMetric.mvp.get(viewer.id) ?? 0)
-                  : totals.mvp,
-                highlight: rankMetric === "mvp",
-              },
-              {
-                label: "SVP Rank",
-                value: viewer
-                  ? rankBadge(ranksByMetric.svp.get(viewer.id) ?? 0)
-                  : totals.svp,
-                highlight: rankMetric === "svp",
-              },
-              {
-                label: "Total Matches",
-                value: matchSummary.totalMatches,
-              },
-            ]}
+            stats={
+              viewer
+                ? [
+                    {
+                      label: "GG Rank",
+                      value: rankBadge(ranksByMetric.gg.get(viewer.id) ?? 0),
+                      highlight: rankMetric === "gg",
+                    },
+                    {
+                      label: "MVP Rank",
+                      value: rankBadge(ranksByMetric.mvp.get(viewer.id) ?? 0),
+                      highlight: rankMetric === "mvp",
+                    },
+                    {
+                      label: "SVP Rank",
+                      value: rankBadge(ranksByMetric.svp.get(viewer.id) ?? 0),
+                      highlight: rankMetric === "svp",
+                    },
+                    {
+                      label: "Total Matches",
+                      value: matchSummary.totalMatches,
+                    },
+                  ]
+                : [
+                    { label: "Total GG", value: totals.gg, highlight: rankMetric === "gg" },
+                    { label: "Total MVP", value: totals.mvp, highlight: rankMetric === "mvp" },
+                    { label: "Total SVP", value: totals.svp, highlight: rankMetric === "svp" },
+                    { label: "Matches", value: matchSummary.totalMatches },
+                  ]
+            }
           />
 
           {matchSummary.inferredLegacyMatches > 0 && (

@@ -8,13 +8,23 @@ import {
   useSyncExternalStore,
   type ChangeEvent,
 } from "react";
-import { ROSTER } from "@/lib/config";
+import db from "@/lib/db";
+import { CURRENT_TITLE, ROSTER } from "@/lib/config";
 import { logManualMatch, logMatchFromScan } from "@/lib/log-entries";
 import { TITLE_LABELS, type ExtractedMatch } from "@/lib/dota-ocr";
+import { entryKindShortLabel, type EntryKind } from "@/lib/entry-kinds";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { PageLayout } from "@/components/page-layout";
+import { PageHeader } from "@/components/page-header";
+import { HowItWorksCard } from "@/components/how-it-works-card";
+import {
+  RecentEntriesCard,
+  type RecentEntryItem,
+} from "@/components/recent-entries-card";
+import { TipCard } from "@/components/tip-card";
 import { BorderBeam } from "border-beam";
 import {
   Check,
@@ -22,6 +32,8 @@ import {
   Loader2,
   Sparkles,
   X,
+  Swords,
+  ArrowRight,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -431,8 +443,32 @@ export default function LogPage() {
         ? !!scan && scanSelectedCount > 0
         : false;
 
+  const recentEntries = useRailRecentEntries();
+
   return (
-    <div className="mx-auto max-w-2xl px-8 pt-4 pb-32 space-y-5">
+    <PageLayout
+      header={
+        <PageHeader
+          eyebrow={
+            <>
+              <Swords className="size-3" aria-hidden />
+              <span>Capture a match</span>
+            </>
+          }
+          title="Log a new match"
+          subtitle="Drop a post-match screenshot or pick players manually. Updates the leaderboard live."
+          banner="/banners/log.svg"
+          bannerAlt="Match log banner"
+        />
+      }
+      rail={
+        <>
+          <HowItWorksCard />
+          <RecentEntriesCard entries={recentEntries} />
+          <TipCard body="Cycle each player W → L → off. Add MVP to a winner and SVP to a loser before confirming." />
+        </>
+      }
+    >
       <input
         ref={fileInputRef}
         type="file"
@@ -441,39 +477,49 @@ export default function LogPage() {
         onChange={handleFileChange}
       />
 
-      {/* AI upload — always available unless review/uploading */}
       {phase === "idle" && (
-        <section className="space-y-1.5">
-          <div className="flex items-stretch gap-2">
-            <Button
-              variant="outline"
-              size="lg"
-              className="flex-1"
-              disabled={aiRemaining <= 0}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <Camera className="size-4" aria-hidden />
-              Scan screenshot
-            </Button>
+        <section className="surface-card overflow-hidden">
+          <header className="flex items-start justify-between gap-3 border-b border-white/5 px-5 py-4">
+            <div>
+              <div className="text-[10px] font-semibold uppercase tracking-[0.3em] text-primary">
+                AI Scan
+              </div>
+              <h2 className="mt-1 font-display text-lg font-bold uppercase tracking-[0.06em] text-foreground">
+                Upload Screenshot
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Auto-extract players and titles from a post-match screen.
+              </p>
+            </div>
             <div
               className={cn(
-                "flex items-center gap-1.5 rounded-md border px-3 text-xs",
+                "flex items-center gap-1.5 border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em]",
                 aiRemaining > 0
-                  ? "border-border text-muted-foreground"
-                  : "border-red-500/30 text-red-500"
+                  ? "border-primary/40 text-primary"
+                  : "border-rose-500/40 text-rose-400"
               )}
               title={`AI uses today: ${AI_DAILY_LIMIT - aiRemaining}/${AI_DAILY_LIMIT}`}
             >
               <Sparkles className="size-3.5" aria-hidden />
               <span className="tabular-nums">
-                {aiRemaining}/{AI_DAILY_LIMIT}
+                {aiRemaining}/{AI_DAILY_LIMIT} left
               </span>
             </div>
+          </header>
+          <div className="px-5 py-5">
+            <Button
+              size="lg"
+              className="h-14 w-full font-display uppercase tracking-[0.18em] glow-primary"
+              disabled={aiRemaining <= 0}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Camera className="size-5" aria-hidden />
+              Scan a Screenshot
+            </Button>
+            {error && (
+              <p className="mt-3 text-xs text-rose-400">{error}</p>
+            )}
           </div>
-          <p className="text-xs text-muted-foreground">
-            Auto-extract players and titles from a post-match screenshot.
-          </p>
-          {error && <p className="text-xs text-red-500">{error}</p>}
         </section>
       )}
 
@@ -488,6 +534,16 @@ export default function LogPage() {
             </CardContent>
           </Card>
         </BorderBeam>
+      )}
+
+      {phase === "idle" && (
+        <div className="flex items-center gap-4 py-1">
+          <span className="h-px flex-1 bg-white/10" />
+          <span className="text-[10px] font-semibold uppercase tracking-[0.3em] text-muted-foreground">
+            Or enter manually
+          </span>
+          <span className="h-px flex-1 bg-white/10" />
+        </div>
       )}
 
       {showScan && (
@@ -515,21 +571,22 @@ export default function LogPage() {
 
       {confirmData && <ConfirmSummary data={confirmData} />}
 
-      {/* Sticky action bar */}
-      <div className="sticky bottom-28 -mx-8 px-8 z-30 will-change-transform">
-        {/* Progressive blur fade above the action bar */}
-        <div aria-hidden className="pointer-events-none h-8 bg-linear-to-b from-transparent to-background/85" />
-        <div className="pb-3 bg-background/85 backdrop-blur-md">
+      <div className="pt-1">
         {phase === "idle" && (
           <Button
             size="lg"
-            className="w-full"
+            className="h-14 w-full font-display text-sm uppercase tracking-[0.2em] glow-primary"
             disabled={!canLogManual}
             onClick={goToConfirmManual}
           >
-            {canLogManual
-              ? `Log match · ${manualWonIds.length}W / ${manualLostIds.length}L`
-              : "Pick players to log a match"}
+            {canLogManual ? (
+              <>
+                Log match · {manualWonIds.length}W / {manualLostIds.length}L
+                <ArrowRight className="size-4" aria-hidden />
+              </>
+            ) : (
+              "Pick players to log a match"
+            )}
           </Button>
         )}
         {showScan && (
@@ -538,7 +595,7 @@ export default function LogPage() {
               Discard
             </Button>
             <Button
-              className="w-full sm:flex-1"
+              className="h-12 w-full font-display uppercase tracking-[0.18em] glow-primary sm:flex-1"
               disabled={scanSelectedCount === 0}
               onClick={goToConfirmScan}
             >
@@ -552,28 +609,132 @@ export default function LogPage() {
               Back
             </Button>
             <Button
-              className="w-full sm:flex-1"
+              className="h-12 w-full font-display uppercase tracking-[0.18em] glow-primary sm:flex-1"
               disabled={!canConfirmLog}
               onClick={handleConfirmLog}
             >
-              Confirm & log
+              Confirm &amp; log
             </Button>
           </div>
         )}
         {phase === "success" && (
           <Button
             size="lg"
-            className="w-full bg-emerald-600 text-white hover:bg-emerald-600"
+            className="h-14 w-full bg-emerald-600 font-display uppercase tracking-[0.2em] text-white hover:bg-emerald-600 glow-win"
             disabled
           >
             <Check className="size-5" aria-hidden />
             Logged!
           </Button>
         )}
-        </div>
       </div>
-    </div>
+    </PageLayout>
   );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Right-rail data hook                                              */
+/* ------------------------------------------------------------------ */
+
+function useRailRecentEntries(): RecentEntryItem[] {
+  const { data } = db.useQuery({
+    matches: {
+      $: {
+        where: { title: CURRENT_TITLE },
+        order: { playedAt: "desc" },
+        limit: 5,
+      },
+      players: {},
+      titles: {},
+    },
+    entries: {
+      $: {
+        where: { title: CURRENT_TITLE },
+        order: { serverCreatedAt: "desc" },
+      },
+    },
+  });
+
+  const matches = data?.matches ?? [];
+  const entries = data?.entries ?? [];
+  const rosterById = new Map(ROSTER.map((p) => [p.id, p]));
+
+  const winLossEntriesByPlayer = new Map<
+    string,
+    { kind: EntryKind; createdAt: Date }[]
+  >();
+  for (const e of entries) {
+    const kind = (e.kind ?? "gg") as EntryKind;
+    if (kind !== "win" && kind !== "loss") continue;
+    const list = winLossEntriesByPlayer.get(e.playerId) ?? [];
+    list.push({ kind, createdAt: e.createdAt });
+    winLossEntriesByPlayer.set(e.playerId, list);
+  }
+
+  return matches.slice(0, 5).map((m) => {
+    const playedAt = m.playedAt ?? m.createdAt;
+    const start = playedAt.getTime();
+    const end = start + 5000;
+    const rosterPlayers = (m.players ?? []).filter(
+      (p): p is typeof p & { playerId: string } =>
+        !!p.playerId && rosterById.has(p.playerId)
+    );
+    let wonCount = 0;
+    let lossCount = 0;
+    for (const p of rosterPlayers) {
+      const list = winLossEntriesByPlayer.get(p.playerId) ?? [];
+      const win = list.some(
+        (t) =>
+          t.kind === "win" &&
+          t.createdAt.getTime() >= start &&
+          t.createdAt.getTime() <= end
+      );
+      const loss = list.some(
+        (t) =>
+          t.kind === "loss" &&
+          t.createdAt.getTime() >= start &&
+          t.createdAt.getTime() <= end
+      );
+      if (win) wonCount++;
+      if (loss) lossCount++;
+    }
+    const tone: RecentEntryItem["resultTone"] =
+      wonCount === 0 && lossCount === 0
+        ? "neutral"
+        : wonCount >= lossCount
+          ? "win"
+          : "loss";
+    const resultLabel =
+      tone === "win" ? "Win" : tone === "loss" ? "Loss" : "Match";
+
+    const ms = Date.now() - playedAt.getTime();
+    const sec = Math.floor(ms / 1000);
+    const min = Math.floor(sec / 60);
+    const hr = Math.floor(min / 60);
+    const day = Math.floor(hr / 24);
+    const agoLabel =
+      sec < 60 ? `${sec}s ago` : min < 60 ? `${min}m ago` : hr < 24 ? `${hr}h ago` : `${day}d ago`;
+
+    let pointsLabel: string | null = null;
+    const titleNames = (m.titles ?? [])
+      .map((t) => entryKindShortLabel(t.titleKey as EntryKind))
+      .filter(Boolean);
+    if (titleNames.length > 0) {
+      pointsLabel = titleNames.slice(0, 2).join(" · ");
+    }
+
+    return {
+      id: m.id ?? `${start}`,
+      resultLabel,
+      resultTone: tone,
+      agoLabel,
+      participants: rosterPlayers.map((p) => ({
+        id: p.playerId,
+        name: rosterById.get(p.playerId)?.name ?? p.displayName ?? "?",
+      })),
+      pointsLabel,
+    };
+  });
 }
 
 /* ------------------------------------------------------------------ */
@@ -797,12 +958,16 @@ function ManualEntry({
   setTitles: React.Dispatch<React.SetStateAction<Record<TitleKey, string | null>>>;
 }) {
   return (
-    <section className="space-y-2">
-      <h2 className="text-sm font-medium text-muted-foreground">
-        Who played?{" "}
-        <span className="text-foreground/60">Tap to cycle W → L → off</span>
-      </h2>
-      <div className="grid grid-cols-2 gap-2">
+    <section className="surface-card overflow-hidden">
+      <header className="flex items-baseline justify-between border-b border-white/5 px-5 py-4">
+        <h2 className="font-display text-lg font-bold uppercase tracking-[0.06em] text-foreground">
+          Who played?
+        </h2>
+        <span className="text-[10px] uppercase tracking-[0.25em] text-muted-foreground">
+          Tap to cycle W → L → off
+        </span>
+      </header>
+      <div className="grid grid-cols-2 gap-2 p-5">
         {ROSTER.map((player) => {
           const status = statuses[player.id] ?? "off";
           const active = status !== "off";
@@ -899,20 +1064,20 @@ function ManualEntry({
 function StatusPill({ status }: { status: WlStatus }) {
   if (status === "win") {
     return (
-      <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/40">
+      <Badge className="bg-emerald-500/15 text-emerald-400 border border-emerald-500/40 font-display tracking-[0.18em] glow-win">
         W
       </Badge>
     );
   }
   if (status === "loss") {
     return (
-      <Badge className="bg-red-500/20 text-red-400 border border-red-500/40">
+      <Badge className="bg-red-500/15 text-red-400 border border-red-500/40 font-display tracking-[0.18em] glow-loss">
         L
       </Badge>
     );
   }
   return (
-    <Badge variant="outline" className="text-muted-foreground">
+    <Badge variant="outline" className="font-display tracking-[0.18em] text-muted-foreground">
       —
     </Badge>
   );
